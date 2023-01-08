@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
+	"ncloud-api/handlers"
 	"ncloud-api/utils/helper"
 	"net/http"
 	"time"
@@ -22,11 +23,11 @@ func health(c *gin.Context) {
 
 func main() {
 	// Setup database
-	DbHost = helper.GetEnv("DB_HOST", "localhost:8080")
+	DbHost = helper.GetEnv("DB_HOST", "localhost:27017")
 	DbPassword = helper.GetEnv("DB_NAME", "rootpass")
 	DbUser = helper.GetEnv("DB_USER", "rootuser")
 
-	db, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
+	client, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,16 +35,26 @@ func main() {
 
 	defer cancel()
 
-	err = db.Connect(ctx)
+	err = client.Connect(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Disconnect(ctx)
+	defer client.Disconnect(ctx)
+
+	db := client.Database("ncloud-api")
+
+	// Handlers
+	userHandler := handlers.UserHandler{Db: db}
+
 
 	// Setup router
 	router := gin.Default()
 
+
+
+
 	router.GET("/api/health", health)
+	router.POST("/api/register", userHandler.Register)
 
 	router.Run("localhost:8080")
 }
