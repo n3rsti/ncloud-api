@@ -1,6 +1,17 @@
 package models
 
+import (
+	"go.mongodb.org/mongo-driver/bson"
+)
+
 type User struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username" validate:"min=1"`
+	Password string `json:"password" validate:"min=5"`
+}
+
+func (u *User) ToBSON() bson.D {
+	return bson.D{
+		{"username", u.Username},
+		{"password", u.Password},
+	}
 }

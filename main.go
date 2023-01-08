@@ -46,12 +46,8 @@ func main() {
 	// Handlers
 	userHandler := handlers.UserHandler{Db: db}
 
-
 	// Setup router
 	router := gin.Default()
-
-
-
 
 	router.GET("/api/health", health)
 	router.POST("/api/register", userHandler.Register)
