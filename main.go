@@ -22,20 +22,23 @@ func health(c *gin.Context) {
 
 func main() {
 	// Setup database
-	DbHost = helper.GetEnv("DB_HOST", "")
-	DbPassword = helper.GetEnv("DB_NAME", "")
-	DbUser = helper.GetEnv("DB_USER", "")
+	DbHost = helper.GetEnv("DB_HOST", "localhost:8080")
+	DbPassword = helper.GetEnv("DB_NAME", "rootpass")
+	DbUser = helper.GetEnv("DB_USER", "rootuser")
 
-	client, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
+	db, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err = client.Connect(ctx)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	defer cancel()
+
+	err = db.Connect(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Disconnect(ctx)
+	defer db.Disconnect(ctx)
 
 	// Setup router
 	router := gin.Default()
