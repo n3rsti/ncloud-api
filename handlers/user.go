@@ -5,6 +5,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/validator.v2"
 	"ncloud-api/models"
+	"ncloud-api/utils/crypto"
 	"net/http"
 )
 
@@ -26,7 +27,16 @@ func (h *UserHandler) Register(c *gin.Context) {
 	// Insert to DB
 	collection := h.Db.Collection("user")
 
-	_, err := collection.InsertOne(c, user.ToBSON())
+	// hash password
+	passwordHash, err := crypto.GenerateHash(user.Password)
+
+	if err != nil {
+		return
+	}
+
+	user.Password = passwordHash
+
+	_, err = collection.InsertOne(c, user.ToBSON())
 
 	if err != nil {
 		return

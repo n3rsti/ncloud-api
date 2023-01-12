@@ -16,6 +16,7 @@ import (
 var DbHost string
 var DbPassword string
 var DbUser string
+var DbName string
 
 func health(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, map[string]string{"ok": "true"})
@@ -24,8 +25,9 @@ func health(c *gin.Context) {
 func main() {
 	// Setup database
 	DbHost = helper.GetEnv("DB_HOST", "localhost:27017")
-	DbPassword = helper.GetEnv("DB_NAME", "rootpass")
+	DbPassword = helper.GetEnv("DB_PASSWORD", "rootpass")
 	DbUser = helper.GetEnv("DB_USER", "rootuser")
+	DbName = helper.GetEnv("DB_NAME", "ncloud-api")
 
 	client, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
 	if err != nil {
@@ -41,7 +43,7 @@ func main() {
 	}
 	defer client.Disconnect(ctx)
 
-	db := client.Database("ncloud-api")
+	db := client.Database(DbName)
 
 	// Handlers
 	userHandler := handlers.UserHandler{Db: db}
