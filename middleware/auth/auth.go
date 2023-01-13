@@ -1,4 +1,4 @@
-package middleware
+package auth
 
 import (
 	"errors"
@@ -15,13 +15,14 @@ type SignedClaims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateTokens(username string) (accessToken string, refreshToken string) {
+func GenerateTokens(username string) (accessToken, refreshToken string, err error) {
 	newToken, err := generateAccessToken(username)
 	if err != nil {
 		log.Panic(err)
-		return
+		return "", "", err
 	}
 
+	// Refresh token for 7 days
 	refreshClaims := &SignedClaims{
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -29,26 +30,24 @@ func GenerateTokens(username string) (accessToken string, refreshToken string) {
 		},
 	}
 
-
-
 	newRefreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, refreshClaims).SignedString([]byte(SecretKey))
 	if err != nil {
 		log.Panic(err)
-		return
+		return "", "", err
 	}
 
-	return newToken, newRefreshToken
+	return newToken, newRefreshToken, nil
 }
 
-func GenerateAccessTokenFromRefreshToken(refreshToken string)(accessToken string, err error){
+func GenerateAccessTokenFromRefreshToken(refreshToken string) (accessToken string, err error) {
 	token, err := jwt.ParseWithClaims(
 		refreshToken,
 		&SignedClaims{},
 		func(token *jwt.Token) (interface{}, error) {
-		return []byte(SecretKey), nil
-	})
+			return []byte(SecretKey), nil
+		})
 
-	if err != nil{
+	if err != nil {
 		log.Panic(err)
 		return
 	}
@@ -63,17 +62,17 @@ func GenerateAccessTokenFromRefreshToken(refreshToken string)(accessToken string
 		return "", errors.New("refresh token expired")
 	}
 
-
 	newAccessToken, err := generateAccessToken(claims.Username)
 
 	return newAccessToken, nil
 }
 
-func generateAccessToken(username string)(accessToken string, err error) {
+func generateAccessToken(username string) (accessToken string, err error) {
+	// Access token for 20 minutes
 	claims := &SignedClaims{
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Local().Add(time.Hour * time.Duration(24))),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Local().Add(time.Minute * time.Duration(20))),
 		},
 	}
 
