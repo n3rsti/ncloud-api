@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/validator.v2"
@@ -21,6 +22,9 @@ func (h *UserHandler) Register(c *gin.Context) {
 	}
 
 	if err := validator.Validate(user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Error in validation",
+		})
 		return
 	}
 
@@ -31,6 +35,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	passwordHash, err := crypto.GenerateHash(user.Password)
 
 	if err != nil {
+		fmt.Println("Error while creating password hash")
 		return
 	}
 
@@ -39,6 +44,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	_, err = collection.InsertOne(c, user.ToBSON())
 
 	if err != nil {
+		fmt.Println("Error during DB operation")
 		return
 	}
 
