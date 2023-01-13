@@ -8,7 +8,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"ncloud-api/handlers"
-	"ncloud-api/middleware"
 	"ncloud-api/utils/helper"
 	"net/http"
 	"time"
@@ -39,7 +38,6 @@ func main() {
 	defer cancel()
 
 
-	fmt.Println(middleware.GenerateTokens())
 
 
 	err = client.Connect(ctx)
