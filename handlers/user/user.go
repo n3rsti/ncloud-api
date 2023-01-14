@@ -1,4 +1,4 @@
-package handlers
+package user
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/validator.v2"
+	"log"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"ncloud-api/utils/crypto"
@@ -77,7 +78,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	err := collection.FindOne(c, bson.D{{"username", loginData.Username}}).Decode(&result)
 
 	if err != nil {
-		fmt.Println("User doesn't exist")
+		log.Panic(err)
 		c.Status(http.StatusForbidden)
 		return
 	}
@@ -86,14 +87,14 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	isValidPassword := crypto.ComparePasswordAndHash(loginData.Password, passwordHash)
 	if isValidPassword == false {
-		fmt.Println("Invalid password")
+		log.Panic(err)
 		c.Status(http.StatusForbidden)
 		return
 	}
 
 	accessToken, refreshToken, err := auth.GenerateTokens(loginData.Username)
 	if err != nil {
-		fmt.Println("Error generating tokens")
+		log.Panic(err)
 		c.Status(http.StatusBadRequest)
 		return
 	}

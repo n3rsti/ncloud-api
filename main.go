@@ -7,7 +7,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
-	"ncloud-api/handlers"
+	"ncloud-api/handlers/upload"
+	"ncloud-api/handlers/user"
 	"ncloud-api/utils/helper"
 	"net/http"
 	"time"
@@ -49,7 +50,7 @@ func main() {
 	db := client.Database(DbName)
 
 	// Handlers
-	userHandler := handlers.UserHandler{Db: db}
+	userHandler := user.UserHandler{Db: db}
 
 	// Setup router
 	router := gin.Default()
@@ -57,6 +58,10 @@ func main() {
 	router.GET("/api/health", health)
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)
+
+	router.MaxMultipartMemory = 8 << 20  // 8 MiB
+	router.POST("/upload", upload.Upload)
+
 
 	router.Run("localhost:8080")
 }
