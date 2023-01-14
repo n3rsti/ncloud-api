@@ -3,8 +3,10 @@ package handlers
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/validator.v2"
+	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"ncloud-api/utils/crypto"
 	"net/http"
@@ -49,4 +51,57 @@ func (h *UserHandler) Register(c *gin.Context) {
 	}
 
 	c.IndentedJSON(http.StatusCreated, user)
+}
+
+func (h *UserHandler) Login(c *gin.Context) {
+	type LoginData struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	var loginData LoginData
+
+	if err := c.BindJSON(&loginData); err != nil {
+		return
+	}
+
+	if loginData.Username == "" || loginData.Password == "" {
+		fmt.Println("Password or username empty")
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	var result bson.M
+
+	collection := h.Db.Collection("user")
+	err := collection.FindOne(c, bson.D{{"username", loginData.Username}}).Decode(&result)
+
+	if err != nil {
+		fmt.Println("User doesn't exist")
+		c.Status(http.StatusForbidden)
+		return
+	}
+
+	passwordHash := result["password"].(string)
+
+	isValidPassword := crypto.ComparePasswordAndHash(loginData.Password, passwordHash)
+	if isValidPassword == false {
+		fmt.Println("Invalid password")
+		c.Status(http.StatusForbidden)
+		return
+	}
+
+	accessToken, refreshToken, err := auth.GenerateTokens(loginData.Username)
+	if err != nil {
+		fmt.Println("Error generating tokens")
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, gin.H{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+	})
+
+	return
 }

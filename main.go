@@ -56,6 +56,7 @@ func main() {
 
 	router.GET("/api/health", health)
 	router.POST("/api/register", userHandler.Register)
+	router.POST("/api/login", userHandler.Login)
 
 	router.Run("localhost:8080")
 }
