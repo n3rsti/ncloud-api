@@ -51,6 +51,7 @@ func main() {
 
 	// Handlers
 	userHandler := user.UserHandler{Db: db}
+	fileHandler := upload.FileHandler{Db: db}
 
 	// Setup router
 	router := gin.Default()
@@ -60,7 +61,7 @@ func main() {
 	router.POST("/api/login", userHandler.Login)
 
 	router.MaxMultipartMemory = 8 << 20  // 8 MiB
-	router.POST("/upload", upload.Upload)
+	router.POST("/upload", fileHandler.Upload)
 
 
 	router.Run("localhost:8080")
