@@ -9,6 +9,7 @@ import (
 	"log"
 	"ncloud-api/handlers/upload"
 	"ncloud-api/handlers/user"
+	"ncloud-api/middleware/auth"
 	"ncloud-api/utils/helper"
 	"net/http"
 	"time"
@@ -60,8 +61,17 @@ func main() {
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)
 
+
+
+
 	router.MaxMultipartMemory = 8 << 20  // 8 MiB
-	router.POST("/upload", fileHandler.Upload)
+
+
+	authorized := router.Group("/")
+	authorized.Use(auth.Auth())
+	{
+		authorized.POST("/upload", fileHandler.Upload).Use(auth.Auth())
+	}
 
 
 	router.Run("localhost:8080")

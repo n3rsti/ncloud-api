@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
+	"ncloud-api/middleware/auth"
 	"net/http"
 )
 
@@ -19,10 +20,15 @@ type FileHandler struct {
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
 
+	claims := auth.ExtractClaimsFromContext(c)
+	fmt.Println(claims.Username)
+
+
 	collection := h.Db.Collection("files")
 
 	res, err := collection.InsertOne(c, bson.D{
 		{"name", file.Filename},
+		{"user", claims.Username},
 	})
 
 	if err != nil {

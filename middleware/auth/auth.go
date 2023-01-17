@@ -2,9 +2,12 @@ package auth
 
 import (
 	"errors"
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"log"
 	"ncloud-api/utils/helper"
+	"net/http"
+	"strings"
 	"time"
 )
 
@@ -83,4 +86,108 @@ func generateAccessToken(username string) (accessToken string, err error) {
 
 	return newToken, nil
 
+}
+
+func ValidateToken(signedToken string) (claims *SignedClaims, err error){
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&SignedClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(SecretKey), nil
+		},
+	)
+
+	if err != nil {
+		return
+	}
+
+	claims, ok := token.Claims.(*SignedClaims)
+	if !ok {
+		err = errors.New("couldn't parse claims")
+		return
+	}
+
+	if claims.ExpiresAt.Unix() < time.Now().Local().Unix() {
+		err = errors.New("token expired")
+		return
+	}
+
+
+
+	return
+}
+
+// ExtractClaims
+//
+// Return JWT claims as SignedClaims
+//
+// This function does not contain any checks for validity
+// It should only be used after successfully passing ValidateToken method
+//
+//
+func ExtractClaims(signedToken string) *SignedClaims{
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&SignedClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(SecretKey), nil
+		},
+	)
+
+	if err != nil {
+		log.Panic(err)
+		return nil
+	}
+
+	claims, ok := token.Claims.(*SignedClaims)
+	if !ok {
+		return nil
+	}
+
+	return claims
+}
+
+// ExtractClaimsFromContext
+//
+// Return JWT claims from gin.Context as SignedClaims
+//
+// This function does not contain any checks for validity
+// It should only be used after successfully passing ValidateToken method
+//
+//
+func ExtractClaimsFromContext(c *gin.Context) *SignedClaims {
+	token := c.GetHeader("Authorization")
+	token = token[len("Bearer "):]
+
+	return ExtractClaims(token)
+}
+
+
+func Auth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := c.GetHeader("Authorization")
+
+		if !strings.HasPrefix(token, "Bearer ") {
+			c.IndentedJSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid access token",
+			})
+			c.Abort()
+			return
+		}
+
+		token = token[len("Bearer "):]
+
+		_, err := ValidateToken(token)
+
+
+		if err != nil {
+			c.IndentedJSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid access token",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
 }
