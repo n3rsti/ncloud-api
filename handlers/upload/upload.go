@@ -23,7 +23,6 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	directory := c.PostForm("directory")
 
 	claims := auth.ExtractClaimsFromContext(c)
-	fmt.Println(claims.Id)
 
 	collection := h.Db.Collection("files")
 
@@ -42,7 +41,10 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	fileId := res.InsertedID.(primitive.ObjectID).Hex()
 
 	err = c.SaveUploadedFile(file, uploadDestination+fileId)
+
 	if err != nil {
+		// Remove file document if saving it wasn't successful
+		_, _ = collection.DeleteOne(c, bson.D{{"_id", res.InsertedID}})
 		log.Panic(err)
 		return
 	}
