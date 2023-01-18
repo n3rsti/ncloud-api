@@ -14,12 +14,12 @@ import (
 var SecretKey = helper.GetEnv("SECRET_KEY", "secret")
 
 type SignedClaims struct {
-	Username string `json:"username"`
+	Id string `json:"user_id"`
 	jwt.RegisteredClaims
 }
 
-func GenerateTokens(username string) (accessToken, refreshToken string, err error) {
-	newToken, err := generateAccessToken(username)
+func GenerateTokens(userId string) (accessToken, refreshToken string, err error) {
+	newToken, err := generateAccessToken(userId)
 	if err != nil {
 		log.Panic(err)
 		return "", "", err
@@ -27,7 +27,7 @@ func GenerateTokens(username string) (accessToken, refreshToken string, err erro
 
 	// Refresh token for 7 days
 	refreshClaims := &SignedClaims{
-		Username: username,
+		Id: userId,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Local().Add(time.Hour * time.Duration(168))),
 		},
@@ -65,15 +65,15 @@ func GenerateAccessTokenFromRefreshToken(refreshToken string) (accessToken strin
 		return "", errors.New("refresh token expired")
 	}
 
-	newAccessToken, err := generateAccessToken(claims.Username)
+	newAccessToken, err := generateAccessToken(claims.Id)
 
 	return newAccessToken, nil
 }
 
-func generateAccessToken(username string) (accessToken string, err error) {
+func generateAccessToken(userId string) (accessToken string, err error) {
 	// Access token for 20 minutes
 	claims := &SignedClaims{
-		Username: username,
+		Id: userId,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Local().Add(time.Minute * time.Duration(20))),
 		},
