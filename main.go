@@ -61,6 +61,7 @@ func main() {
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)
 
+	router.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
 
 
 

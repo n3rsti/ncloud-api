@@ -81,3 +81,52 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusCreated, data)
 }
+
+func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context){
+	directoryId := c.Param("id")
+	reqUser := auth.ExtractClaimsFromContext(c)
+
+	// DB aggregation setup
+	addFieldsStage := bson.D{
+		{"$addFields", bson.D{
+			{"_id", bson.D{{"$toString", "$_id"}}},
+		}},
+	}
+
+	lookupStage := bson.D{{"$lookup", bson.D{
+		{"from", "files"},
+		{"localField", "_id"},
+		{"foreignField", "parent_directory"},
+		{"as", "files"},
+	}}}
+
+	matchStage := bson.D{
+		{"$match", bson.D{
+			{"_id", directoryId},
+		}},
+	}
+
+	collection := h.Db.Collection("directories")
+
+	cursor, err := collection.Aggregate(c, mongo.Pipeline{addFieldsStage, lookupStage, matchStage})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// map results to bson.M
+	var results []bson.M
+	if err = cursor.All(c, &results); err != nil {
+		log.Fatal(err)
+	}
+
+	directoryOwner := results[0]["user"]
+
+
+	if directoryOwner == "" || directoryOwner != reqUser.Id {
+		c.Status(http.StatusForbidden)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, results)
+}
