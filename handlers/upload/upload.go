@@ -21,14 +21,14 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
 
 	claims := auth.ExtractClaimsFromContext(c)
-	fmt.Println(claims.Username)
+	fmt.Println(claims.Id)
 
 
 	collection := h.Db.Collection("files")
 
 	res, err := collection.InsertOne(c, bson.D{
 		{"name", file.Filename},
-		{"user", claims.Username},
+		{"user", claims.Id},
 	})
 
 	if err != nil {

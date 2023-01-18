@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/validator.v2"
 	"log"
@@ -78,7 +79,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	err := collection.FindOne(c, bson.D{{"username", loginData.Username}}).Decode(&result)
 
 	if err != nil {
-		log.Panic(err)
+		fmt.Println(err)
 		c.Status(http.StatusForbidden)
 		return
 	}
@@ -87,15 +88,17 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	isValidPassword := crypto.ComparePasswordAndHash(loginData.Password, passwordHash)
 	if isValidPassword == false {
-		log.Panic(err)
+		fmt.Println(err)
 		c.Status(http.StatusForbidden)
 		return
 	}
 
-	accessToken, refreshToken, err := auth.GenerateTokens(loginData.Username)
+	userId := result["_id"].(primitive.ObjectID).Hex()
+
+
+	accessToken, refreshToken, err := auth.GenerateTokens(userId)
 	if err != nil {
 		log.Panic(err)
-		c.Status(http.StatusBadRequest)
 		return
 	}
 
