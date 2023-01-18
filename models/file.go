@@ -12,5 +12,6 @@ func (f *File) toBSON() bson.D {
 	return bson.D{
 		{"id", f.Id},
 		{"name", f.Name},
+		{"directory_id", f.DirectoryId},
 	}
 }

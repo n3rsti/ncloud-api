@@ -70,7 +70,8 @@ func main() {
 	authorized := router.Group("/")
 	authorized.Use(auth.Auth())
 	{
-		authorized.POST("/upload", fileHandler.Upload).Use(auth.Auth())
+		authorized.POST("/api/upload", fileHandler.Upload)
+		authorized.POST("/api/createDirectory", fileHandler.CreateDirectory)
 	}
 
 
