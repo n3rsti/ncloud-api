@@ -25,6 +25,30 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	claims := auth.ExtractClaimsFromContext(c)
 
 	collection := h.Db.Collection("files")
+	dirCollection := h.Db.Collection("directories")
+
+
+	// Check if user is the owner of directory he wants to upload into
+	if directory != "" {
+		parentDirHexId, err := primitive.ObjectIDFromHex(directory)
+		if err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+
+		var resultDir bson.M
+
+		if err := dirCollection.FindOne(c, bson.D{{"_id", parentDirHexId}}).Decode(&resultDir); err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+
+		if resultDir["user"] == "" || resultDir["user"] != claims.Id {
+			c.Status(http.StatusForbidden)
+			return
+		}
+	}
+
 
 	res, err := collection.InsertOne(c, bson.D{
 		{"name", file.Filename},
@@ -40,9 +64,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	// Convert ID to string
 	fileId := res.InsertedID.(primitive.ObjectID).Hex()
 
-	err = c.SaveUploadedFile(file, uploadDestination+fileId)
-
-	if err != nil {
+	if err = c.SaveUploadedFile(file, uploadDestination+fileId); err != nil {
 		// Remove file document if saving it wasn't successful
 		_, _ = collection.DeleteOne(c, bson.D{{"_id", res.InsertedID}})
 		log.Panic(err)
@@ -79,11 +101,6 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 	var result bson.M
 
 	if err = collection.FindOne(c, bson.D{{"_id", hexId}}).Decode(&result); err != nil {
-		return
-	}
-
-
-	if len(result) == 0 {
 		c.Status(http.StatusNotFound)
 		return
 	}
