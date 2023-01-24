@@ -12,7 +12,7 @@ type Directory struct {
 func (d *Directory) ToBSON() bson.D {
 	return bson.D{
 		{"name", d.Name},
-		{"parent_directory_id", d.ParentDirectory},
+		{"parent_directory", d.ParentDirectory},
 		{"user", d.User},
 	}
 }

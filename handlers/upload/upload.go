@@ -100,6 +100,13 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context){
 		{"as", "files"},
 	}}}
 
+	lookupStage2 := bson.D{{"$lookup", bson.D{
+		{"from", "directories"},
+		{"localField", "_id"},
+		{"foreignField", "parent_directory"},
+		{"as", "directories"},
+	}}}
+
 	matchStage := bson.D{
 		{"$match", bson.D{
 			{"_id", directoryId},
@@ -108,7 +115,7 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context){
 
 	collection := h.Db.Collection("directories")
 
-	cursor, err := collection.Aggregate(c, mongo.Pipeline{addFieldsStage, lookupStage, matchStage})
+	cursor, err := collection.Aggregate(c, mongo.Pipeline{addFieldsStage, lookupStage, lookupStage2, matchStage})
 
 	if err != nil {
 		log.Fatal(err)
@@ -118,6 +125,11 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context){
 	var results []bson.M
 	if err = cursor.All(c, &results); err != nil {
 		log.Fatal(err)
+	}
+
+	if len(results) == 0 {
+		c.Status(http.StatusNotFound)
+		return
 	}
 
 	directoryOwner := results[0]["user"]
