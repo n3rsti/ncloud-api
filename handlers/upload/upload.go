@@ -70,6 +70,30 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 
 	collection := h.Db.Collection("directories")
 
+	hexId, err := primitive.ObjectIDFromHex(data.ParentDirectory)
+	if err != nil {
+		return
+	}
+
+
+	var result bson.M
+
+	if err = collection.FindOne(c, bson.D{{"_id", hexId}}).Decode(&result); err != nil {
+		return
+	}
+
+
+	if len(result) == 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	if result["user"] != user.Id {
+		c.Status(http.StatusForbidden)
+		return
+	}
+
+
 	res, err := collection.InsertOne(c, data.ToBSON())
 
 	if err != nil {
