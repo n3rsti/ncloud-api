@@ -73,6 +73,13 @@ func main() {
 	{
 		authorized.POST("/api/upload", fileHandler.Upload)
 		authorized.POST("/api/createDirectory", fileHandler.CreateDirectory)
+
+		fileGroup := authorized.Group("/")
+		fileGroup.Use(auth.FileAuth(db))
+		{
+			fileGroup.Static("/files/", "/var/ncloud_upload/")
+		}
+
 	}
 
 
