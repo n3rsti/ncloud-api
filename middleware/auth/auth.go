@@ -88,7 +88,7 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 
 }
 
-func ValidateToken(signedToken string) (claims *SignedClaims, err error){
+func ValidateToken(signedToken string) (claims *SignedClaims, err error) {
 	token, err := jwt.ParseWithClaims(
 		signedToken,
 		&SignedClaims{},
@@ -112,20 +112,21 @@ func ValidateToken(signedToken string) (claims *SignedClaims, err error){
 		return
 	}
 
-
+	if claims.Id == "" {
+		err = errors.New("empty id")
+		return
+	}
 
 	return
 }
 
 // ExtractClaims
 //
-// Return JWT claims as SignedClaims
+// # Return JWT claims as SignedClaims
 //
 // This function does not contain any checks for validity
 // It should only be used after successfully passing ValidateToken method
-//
-//
-func ExtractClaims(signedToken string) *SignedClaims{
+func ExtractClaims(signedToken string) *SignedClaims {
 	token, err := jwt.ParseWithClaims(
 		signedToken,
 		&SignedClaims{},
@@ -149,19 +150,16 @@ func ExtractClaims(signedToken string) *SignedClaims{
 
 // ExtractClaimsFromContext
 //
-// Return JWT claims from gin.Context as SignedClaims
+// # Return JWT claims from gin.Context as SignedClaims
 //
 // This function does not contain any checks for validity
 // It should only be used after successfully passing ValidateToken method
-//
-//
 func ExtractClaimsFromContext(c *gin.Context) *SignedClaims {
 	token := c.GetHeader("Authorization")
 	token = token[len("Bearer "):]
 
 	return ExtractClaims(token)
 }
-
 
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -178,7 +176,6 @@ func Auth() gin.HandlerFunc {
 		token = token[len("Bearer "):]
 
 		_, err := ValidateToken(token)
-
 
 		if err != nil {
 			c.IndentedJSON(http.StatusBadRequest, gin.H{

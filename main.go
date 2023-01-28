@@ -39,9 +39,6 @@ func main() {
 
 	defer cancel()
 
-
-
-
 	err = client.Connect(ctx)
 	if err != nil {
 		log.Fatal(err)
@@ -63,10 +60,7 @@ func main() {
 
 	router.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
 
-
-
-	router.MaxMultipartMemory = 8 << 20  // 8 MiB
-
+	router.MaxMultipartMemory = 8 << 20 // 8 MiB
 
 	authorized := router.Group("/")
 	authorized.Use(auth.Auth())
@@ -77,11 +71,11 @@ func main() {
 		fileGroup := authorized.Group("/")
 		fileGroup.Use(auth.FileAuth(db))
 		{
-			fileGroup.Static("/files/", "/var/ncloud_upload/")
+			fileGroup.Static("/upload/", "/var/ncloud_upload/")
+			fileGroup.DELETE("/upload/:id", fileHandler.DeleteFile)
 		}
 
 	}
-
 
 	router.Run("localhost:8080")
 }

@@ -10,6 +10,7 @@ import (
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"net/http"
+	"os"
 )
 
 const uploadDestination = "/var/ncloud_upload/"
@@ -24,9 +25,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	claims := auth.ExtractClaimsFromContext(c)
 
-	collection := h.Db.Collection("files")
+	collection := h.Db.Collection("upload")
 	dirCollection := h.Db.Collection("directories")
-
 
 	// Check if user is the owner of directory he wants to upload into
 	if directory != "" {
@@ -48,7 +48,6 @@ func (h *FileHandler) Upload(c *gin.Context) {
 			return
 		}
 	}
-
 
 	res, err := collection.InsertOne(c, bson.D{
 		{"name", file.Filename},
@@ -97,7 +96,6 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
-
 	var result bson.M
 
 	if err = collection.FindOne(c, bson.D{{"_id", hexId}}).Decode(&result); err != nil {
@@ -109,7 +107,6 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 		c.Status(http.StatusForbidden)
 		return
 	}
-
 
 	res, err := collection.InsertOne(c, data.ToBSON())
 
@@ -123,7 +120,7 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, data)
 }
 
-func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context){
+func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 	directoryId := c.Param("id")
 	reqUser := auth.ExtractClaimsFromContext(c)
 
@@ -135,10 +132,10 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context){
 	}
 
 	lookupStage := bson.D{{"$lookup", bson.D{
-		{"from", "files"},
+		{"from", "upload"},
 		{"localField", "_id"},
 		{"foreignField", "parent_directory"},
-		{"as", "files"},
+		{"as", "upload"},
 	}}}
 
 	lookupStage2 := bson.D{{"$lookup", bson.D{
@@ -175,11 +172,40 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context){
 
 	directoryOwner := results[0]["user"]
 
-
 	if directoryOwner == "" || directoryOwner != reqUser.Id {
 		c.Status(http.StatusForbidden)
 		return
 	}
 
 	c.IndentedJSON(http.StatusOK, results)
+}
+
+func (h *FileHandler) DeleteFile(c *gin.Context) {
+	fileId := c.Param("id")
+
+	// Convert to ObjectID
+	hexFileId, err := primitive.ObjectIDFromHex(fileId)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	collection := h.Db.Collection("upload")
+
+	res, err := collection.DeleteOne(c, bson.D{{"_id", hexFileId}})
+
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	// Remove file
+	err = os.Remove("/var/ncloud_upload/" + fileId)
+	if err != nil {
+
+	}
+
+	fmt.Println(res.DeletedCount)
+
+	c.Status(http.StatusNoContent)
 }

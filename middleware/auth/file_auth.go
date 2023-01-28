@@ -13,10 +13,9 @@ import (
 func FileAuth(database *mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims := ExtractClaimsFromContext(c)
-		idParam := c.Request.RequestURI[len("/files/"):]
+		idParam := c.Request.RequestURI[len("/upload/"):]
 
-
-		collection := database.Collection("files")
+		collection := database.Collection("upload")
 
 		var result bson.M
 
@@ -36,13 +35,11 @@ func FileAuth(database *mongo.Database) gin.HandlerFunc {
 			return
 		}
 
-
 		if claims.Id == "" || claims.Id != result["user"] {
 			c.Status(http.StatusForbidden)
 			c.Abort()
 			return
 		}
-
 		c.Next()
 	}
 }
