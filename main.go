@@ -60,6 +60,7 @@ func main() {
 	router.GET("/api/token/refresh", userHandler.RefreshToken)
 
 	router.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
+	router.GET("/api/directories", fileHandler.GetDirectoryWithFiles)
 
 	router.MaxMultipartMemory = 8 << 20 // 8 MiB
 

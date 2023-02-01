@@ -80,8 +80,10 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
-	if data.Name == "" {
-		c.Status(http.StatusBadRequest)
+	if data.Name == "" || data.ParentDirectory == "" {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": "empty name or parent directory",
+		})
 		return
 	}
 
@@ -124,6 +126,25 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 	directoryId := c.Param("id")
 	reqUser := auth.ExtractClaimsFromContext(c)
 
+
+	var matchStage bson.D
+
+	if directoryId == "" {
+		matchStage = bson.D{
+			{"$match", bson.D{
+				{"parent_directory", ""},
+				{"user", reqUser.Id},
+			}},
+		}
+	} else {
+		matchStage = bson.D{
+			{"$match", bson.D{
+				{"_id", directoryId},
+			}},
+		}
+	}
+
+
 	// DB aggregation setup
 	addFieldsStage := bson.D{
 		{"$addFields", bson.D{
@@ -145,11 +166,7 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 		{"as", "directories"},
 	}}}
 
-	matchStage := bson.D{
-		{"$match", bson.D{
-			{"_id", directoryId},
-		}},
-	}
+
 
 	collection := h.Db.Collection("directories")
 
