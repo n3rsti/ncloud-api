@@ -52,6 +52,15 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
+	collection = h.Db.Collection("directories")
+
+
+	// Create main directory without name and parent directory
+	_, _ = collection.InsertOne(c, bson.D{{"user", user.Username}})
+
+	// Remove password so it won't be included in response
+	user.Password = ""
+
 	c.IndentedJSON(http.StatusCreated, user)
 }
 
