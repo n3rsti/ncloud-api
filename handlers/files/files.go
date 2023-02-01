@@ -132,7 +132,7 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 	if directoryId == "" {
 		matchStage = bson.D{
 			{"$match", bson.D{
-				{"parent_directory", ""},
+				{"parent_directory", nil},
 				{"user", reqUser.Id},
 			}},
 		}
