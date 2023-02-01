@@ -109,3 +109,25 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	return
 }
+
+func (h *UserHandler) RefreshToken(c *gin.Context){
+	token := c.GetHeader("Authorization")
+
+	if len(token) < len("Bearer ") {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	token = token[len("Bearer "):]
+
+	accessToken, err := auth.GenerateAccessTokenFromRefreshToken(token)
+
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		c.Header("WWW-Authenticate", err.Error())
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, gin.H{
+		"access_token": accessToken,
+	})
+}

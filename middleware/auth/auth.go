@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"log"
@@ -51,7 +52,8 @@ func GenerateAccessTokenFromRefreshToken(refreshToken string) (accessToken strin
 		})
 
 	if err != nil {
-		log.Panic(err)
+		fmt.Println(err)
+		err = errors.New("invalid refresh token")
 		return
 	}
 

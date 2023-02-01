@@ -7,7 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
-	"ncloud-api/handlers/upload"
+	"ncloud-api/handlers/files"
 	"ncloud-api/handlers/user"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/utils/helper"
@@ -49,7 +49,7 @@ func main() {
 
 	// Handlers
 	userHandler := user.UserHandler{Db: db}
-	fileHandler := upload.FileHandler{Db: db}
+	fileHandler := files.FileHandler{Db: db}
 
 	// Setup router
 	router := gin.Default()
@@ -57,6 +57,7 @@ func main() {
 	router.GET("/api/health", health)
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)
+	router.GET("/api/token/refresh", userHandler.RefreshToken)
 
 	router.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
 
@@ -71,8 +72,8 @@ func main() {
 		fileGroup := authorized.Group("/")
 		fileGroup.Use(auth.FileAuth(db))
 		{
-			fileGroup.Static("/upload/", "/var/ncloud_upload/")
-			fileGroup.DELETE("/upload/:id", fileHandler.DeleteFile)
+			fileGroup.Static("/files/", "/var/ncloud_upload/")
+			fileGroup.DELETE("/files/:id", fileHandler.DeleteFile)
 		}
 
 	}

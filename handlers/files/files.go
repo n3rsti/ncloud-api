@@ -1,4 +1,4 @@
-package upload
+package files
 
 import (
 	"fmt"
@@ -25,10 +25,10 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	claims := auth.ExtractClaimsFromContext(c)
 
-	collection := h.Db.Collection("upload")
+	collection := h.Db.Collection("files")
 	dirCollection := h.Db.Collection("directories")
 
-	// Check if user is the owner of directory he wants to upload into
+	// Check if user is the owner of directory he wants to files into
 	if directory != "" {
 		parentDirHexId, err := primitive.ObjectIDFromHex(directory)
 		if err != nil {
@@ -132,10 +132,10 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 	}
 
 	lookupStage := bson.D{{"$lookup", bson.D{
-		{"from", "upload"},
+		{"from", "files"},
 		{"localField", "_id"},
 		{"foreignField", "parent_directory"},
-		{"as", "upload"},
+		{"as", "files"},
 	}}}
 
 	lookupStage2 := bson.D{{"$lookup", bson.D{
@@ -190,7 +190,7 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 		return
 	}
 
-	collection := h.Db.Collection("upload")
+	collection := h.Db.Collection("files")
 
 	res, err := collection.DeleteOne(c, bson.D{{"_id", hexFileId}})
 
