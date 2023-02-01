@@ -168,9 +168,10 @@ func Auth() gin.HandlerFunc {
 		token := c.GetHeader("Authorization")
 
 		if !strings.HasPrefix(token, "Bearer ") {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid access token",
+			c.IndentedJSON(http.StatusUnauthorized, gin.H{
+				"error": "no access token",
 			})
+			c.Header("WWW-Authenticate", "invalid access token")
 			c.Abort()
 			return
 		}
@@ -180,9 +181,10 @@ func Auth() gin.HandlerFunc {
 		_, err := ValidateToken(token)
 
 		if err != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid access token",
+			c.IndentedJSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid access token",
 			})
+			c.Header("WWW-Authenticate", "invalid access token")
 			c.Abort()
 			return
 		}
