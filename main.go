@@ -59,9 +59,6 @@ func main() {
 	router.POST("/api/login", userHandler.Login)
 	router.GET("/api/token/refresh", userHandler.RefreshToken)
 
-	router.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
-	router.GET("/api/directories", fileHandler.GetDirectoryWithFiles)
-
 	router.MaxMultipartMemory = 8 << 20 // 8 MiB
 
 	authorized := router.Group("/")
@@ -69,6 +66,8 @@ func main() {
 	{
 		authorized.POST("/api/upload", fileHandler.Upload)
 		authorized.POST("/api/createDirectory", fileHandler.CreateDirectory)
+		authorized.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
+		authorized.GET("/api/directories", fileHandler.GetDirectoryWithFiles)
 
 		fileGroup := authorized.Group("/")
 		fileGroup.Use(auth.FileAuth(db))
