@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
+	"mime/multipart"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"net/http"
@@ -18,6 +19,22 @@ const uploadDestination = "/var/ncloud_upload/"
 type FileHandler struct {
 	Db *mongo.Database
 }
+func getFileContentType(file *multipart.FileHeader)(contentType string, err error){
+	f, err := file.Open()
+
+	if err != nil {
+		return "", err
+	}
+
+	defer f.Close()
+
+	buf := make([]byte, 512)
+
+	_, err = f.Read(buf)
+
+	return http.DetectContentType(buf), err
+}
+
 
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
@@ -49,10 +66,18 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		}
 	}
 
+	fileContentType, err := getFileContentType(file)
+
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
 	res, err := collection.InsertOne(c, bson.D{
 		{"name", file.Filename},
 		{"user", claims.Id},
-		{"directory_id", directory},
+		{"parent_directory", directory},
+		{"type", fileContentType},
 	})
 
 	if err != nil {
