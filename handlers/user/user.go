@@ -112,6 +112,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	c.IndentedJSON(http.StatusOK, gin.H{
+		"username": loginData.Username,
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
 	})
