@@ -65,7 +65,7 @@ func main() {
 	authorized.Use(auth.Auth())
 	{
 		authorized.POST("/api/upload", fileHandler.Upload)
-		authorized.POST("/api/createDirectory", fileHandler.CreateDirectory)
+		authorized.POST("/api/directories", fileHandler.CreateDirectory)
 		authorized.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
 		authorized.GET("/api/directories", fileHandler.GetDirectoryWithFiles)
 
