@@ -19,7 +19,8 @@ const uploadDestination = "/var/ncloud_upload/"
 type FileHandler struct {
 	Db *mongo.Database
 }
-func getFileContentType(file *multipart.FileHeader)(contentType string, err error){
+
+func getFileContentType(file *multipart.FileHeader) (contentType string, err error) {
 	f, err := file.Open()
 
 	if err != nil {
@@ -34,7 +35,6 @@ func getFileContentType(file *multipart.FileHeader)(contentType string, err erro
 
 	return http.DetectContentType(buf), err
 }
-
 
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
@@ -95,7 +95,19 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	c.String(http.StatusOK, fmt.Sprintf("'%s' uploaded!", file.Filename))
+	type FileResponse struct {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+	}
+
+	filesResponse := []FileResponse {
+		{
+			Id: fileId,
+			Name: file.Filename,
+		},
+	}
+
+	c.IndentedJSON(http.StatusCreated, filesResponse)
 }
 
 func (h *FileHandler) CreateDirectory(c *gin.Context) {
@@ -151,7 +163,6 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 	directoryId := c.Param("id")
 	reqUser := auth.ExtractClaimsFromContext(c)
 
-
 	var matchStage bson.D
 
 	if directoryId == "" {
@@ -168,7 +179,6 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 			}},
 		}
 	}
-
 
 	// DB aggregation setup
 	addFieldsStage := bson.D{
@@ -190,8 +200,6 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 		{"foreignField", "parent_directory"},
 		{"as", "directories"},
 	}}}
-
-
 
 	collection := h.Db.Collection("directories")
 
