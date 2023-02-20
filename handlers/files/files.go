@@ -73,12 +73,15 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	res, err := collection.InsertOne(c, bson.D{
-		{"name", file.Filename},
-		{"user", claims.Id},
-		{"parent_directory", directory},
-		{"type", fileContentType},
-	})
+	newFile := models.File{
+		Name:            file.Filename,
+		ParentDirectory: directory,
+		User:            claims.Id,
+		Type:            fileContentType,
+		Size:            file.Size,
+	}
+
+	res, err := collection.InsertOne(c, newFile.ToBSON())
 
 	if err != nil {
 		log.Panic(err)
@@ -100,9 +103,9 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		Name string `json:"name"`
 	}
 
-	filesResponse := []FileResponse {
+	filesResponse := []FileResponse{
 		{
-			Id: fileId,
+			Id:   fileId,
 			Name: file.Filename,
 		},
 	}
