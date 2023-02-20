@@ -233,6 +233,11 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, results)
 }
 
+// DeleteFile
+//
+// Deletes file from server storage and database
+//
+// To avoid confusion: user is already authenticated and authorized at this point from file_auth
 func (h *FileHandler) DeleteFile(c *gin.Context) {
 	fileId := c.Param("id")
 
@@ -240,6 +245,13 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 	hexFileId, err := primitive.ObjectIDFromHex(fileId)
 	if err != nil {
 		c.Status(http.StatusNotFound)
+		return
+	}
+
+	// Remove file
+	err = os.Remove("/var/ncloud_upload/" + fileId)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
 		return
 	}
 
@@ -252,11 +264,7 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 		return
 	}
 
-	// Remove file
-	err = os.Remove("/var/ncloud_upload/" + fileId)
-	if err != nil {
 
-	}
 
 	fmt.Println(res.DeletedCount)
 
