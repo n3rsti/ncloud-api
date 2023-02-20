@@ -15,7 +15,8 @@ import (
 var SecretKey = helper.GetEnv("SECRET_KEY", "secret")
 
 type SignedClaims struct {
-	Id string `json:"user_id"`
+	Id    string `json:"user_id"`
+	Token string `json:"token,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -28,7 +29,8 @@ func GenerateTokens(userId string) (accessToken, refreshToken string, err error)
 
 	// Refresh token for 7 days
 	refreshClaims := &SignedClaims{
-		Id: userId,
+		Id:    userId,
+		Token: "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Local().Add(time.Hour * time.Duration(168))),
 		},
@@ -65,6 +67,10 @@ func GenerateAccessTokenFromRefreshToken(refreshToken string) (accessToken strin
 
 	if claims.ExpiresAt.Unix() < time.Now().Local().Unix() {
 		return "", errors.New("refresh token expired")
+	}
+
+	if claims.Token != "refresh" {
+		return "", errors.New("provided token is not refresh token")
 	}
 
 	newAccessToken, err := generateAccessToken(claims.Id)
