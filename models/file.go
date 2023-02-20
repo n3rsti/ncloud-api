@@ -1,11 +1,14 @@
 package models
 
-import "go.mongodb.org/mongo-driver/bson"
+import (
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 type File struct {
 	Id              string `json:"id"`
 	Name            string `json:"name"`
-	ParentDirectory string `json:"parent_directory,omitempty"`
+	ParentDirectory primitive.ObjectID `json:"parent_directory,omitempty"`
 	User            string `json:"user"`
 	Type            string `json:"type"`
 	Size            int64  `json:"size"`

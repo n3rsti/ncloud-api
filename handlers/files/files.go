@@ -40,6 +40,13 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
 	directory := c.PostForm("directory")
 
+	// Convert to ObjectId
+	parentDirObjectId, err := primitive.ObjectIDFromHex(directory)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
 	claims := auth.ExtractClaimsFromContext(c)
 
 	collection := h.Db.Collection("files")
@@ -47,15 +54,9 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	// Check if user is the owner of directory he wants to files into
 	if directory != "" {
-		parentDirHexId, err := primitive.ObjectIDFromHex(directory)
-		if err != nil {
-			c.Status(http.StatusBadRequest)
-			return
-		}
-
 		var resultDir bson.M
 
-		if err := dirCollection.FindOne(c, bson.D{{"_id", parentDirHexId}}).Decode(&resultDir); err != nil {
+		if err := dirCollection.FindOne(c, bson.D{{"_id", parentDirObjectId}}).Decode(&resultDir); err != nil {
 			c.Status(http.StatusNotFound)
 			return
 		}
@@ -75,7 +76,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	newFile := models.File{
 		Name:            file.Filename,
-		ParentDirectory: directory,
+		ParentDirectory: parentDirObjectId,
 		User:            claims.Id,
 		Type:            fileContentType,
 		Size:            file.Size,
@@ -150,6 +151,8 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
+	data.ParentDirectoryObjectId = hexId
+
 	res, err := collection.InsertOne(c, data.ToBSON())
 
 	if err != nil {
@@ -176,18 +179,17 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 			}},
 		}
 	} else {
+		directoryObjectId, err := primitive.ObjectIDFromHex(directoryId)
+		if err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+
 		matchStage = bson.D{
 			{"$match", bson.D{
-				{"_id", directoryId},
+				{"_id", directoryObjectId},
 			}},
 		}
-	}
-
-	// DB aggregation setup
-	addFieldsStage := bson.D{
-		{"$addFields", bson.D{
-			{"_id", bson.D{{"$toString", "$_id"}}},
-		}},
 	}
 
 	lookupStage := bson.D{{"$lookup", bson.D{
@@ -206,7 +208,7 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 
 	collection := h.Db.Collection("directories")
 
-	cursor, err := collection.Aggregate(c, mongo.Pipeline{addFieldsStage, lookupStage, lookupStage2, matchStage})
+	cursor, err := collection.Aggregate(c, mongo.Pipeline{lookupStage, lookupStage2, matchStage})
 
 	if err != nil {
 		log.Fatal(err)
@@ -235,7 +237,7 @@ func (h *FileHandler) GetDirectoryWithFiles(c *gin.Context) {
 
 // DeleteFile
 //
-// Deletes file from server storage and database
+// # Deletes file from server storage and database
 //
 // To avoid confusion: user is already authenticated and authorized at this point from file_auth
 func (h *FileHandler) DeleteFile(c *gin.Context) {
@@ -263,8 +265,6 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-
-
 
 	fmt.Println(res.DeletedCount)
 
