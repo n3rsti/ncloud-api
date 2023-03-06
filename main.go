@@ -73,7 +73,8 @@ func main() {
 		fileGroup.Use(auth.FileAuth(db))
 		{
 			fileGroup.Static("/files/", "/var/ncloud_upload/")
-			fileGroup.DELETE("/files/:id", fileHandler.DeleteFile)
+			fileGroup.DELETE("/api/files/:id", fileHandler.DeleteFile)
+			fileGroup.PUT("/api/files/:id", fileHandler.UpdateFile)
 		}
 
 	}

@@ -3,6 +3,7 @@ package files
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -267,6 +268,67 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 	}
 
 	fmt.Println(res.DeletedCount)
+
+	c.Status(http.StatusNoContent)
+}
+
+func (h *FileHandler) UpdateFile(c *gin.Context){
+	claims := auth.ExtractClaimsFromContext(c)
+	fileId := c.Param("id")
+
+	hexId, err := primitive.ObjectIDFromHex(fileId)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	// Bind request body to File model
+	var file models.File
+
+	err = c.MustBindWith(&file, binding.JSON)
+	if err != nil {
+		return
+	}
+
+	// These values can't be edited
+	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	// If user tries to edit parentDirectoryId (if parentDirectory is set in request body),
+	// check if user is the owner of the folder
+	if !file.ParentDirectory.IsZero() {
+		var result bson.M
+
+		directoryCollection := h.Db.Collection("directories")
+
+
+		if err := directoryCollection.FindOne(c, bson.D{{"_id", file.ParentDirectory}}).Decode(&result); err != nil {
+			c.Status(http.StatusBadRequest)
+			fmt.Println(err)
+			return
+		}
+
+		// Check if user is the owner
+		if result["user"] != claims.Id {
+			c.Status(http.StatusForbidden)
+			return
+		}
+
+	}
+
+
+	// Update file record
+	fileCollection := h.Db.Collection("files")
+
+	_, err = fileCollection.UpdateByID(c, hexId, bson.D{{"$set", file.ToBSONnotEmpty()}})
+	if err != nil {
+		fmt.Println(err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
 
 	c.Status(http.StatusNoContent)
 }

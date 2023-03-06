@@ -13,7 +13,12 @@ import (
 func FileAuth(database *mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims := ExtractClaimsFromContext(c)
-		idParam := c.Request.RequestURI[len("/files/"):]
+
+		idParam := c.Param("id")
+		if idParam == "" {
+			idParam = c.Request.RequestURI[len("/files/"):]
+		}
+
 
 		collection := database.Collection("files")
 
