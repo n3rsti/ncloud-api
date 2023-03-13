@@ -12,6 +12,7 @@ type File struct {
 	User            string             `json:"user"`
 	Type            string             `json:"type"`
 	Size            int64              `json:"size"`
+	AccessKey       string             `json:"access_key"`
 }
 
 func (f *File) ToBSON() bson.D {
@@ -21,6 +22,7 @@ func (f *File) ToBSON() bson.D {
 		{"parent_directory", f.ParentDirectory},
 		{"type", f.Type},
 		{"size", f.Size},
+		{"access_key", f.AccessKey},
 	}
 }
 
@@ -30,7 +32,7 @@ func (f *File) ToBSON() bson.D {
 func (f *File) ToBSONnotEmpty() bson.D {
 	var data bson.D
 
-	if f.Name != ""{
+	if f.Name != "" {
 		data = append(data, bson.E{Key: "name", Value: f.Name})
 	}
 	if f.User != "" {
@@ -44,6 +46,9 @@ func (f *File) ToBSONnotEmpty() bson.D {
 	}
 	if f.Size != 0 {
 		data = append(data, bson.E{Key: "size", Value: f.Size})
+	}
+	if f.AccessKey != "" {
+		data = append(data, bson.E{Key: "access_key", Value: f.AccessKey})
 	}
 
 	return data

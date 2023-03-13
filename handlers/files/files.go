@@ -291,7 +291,7 @@ func (h *FileHandler) UpdateFile(c *gin.Context){
 	}
 
 	// These values can't be edited
-	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" {
+	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" || file.AccessKey != "" {
 		c.Status(http.StatusBadRequest)
 		return
 	}
