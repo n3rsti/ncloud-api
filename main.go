@@ -70,7 +70,7 @@ func main() {
 		authorized.GET("/api/directories", fileHandler.GetDirectoryWithFiles)
 
 		fileGroup := authorized.Group("/")
-		fileGroup.Use(auth.FileAuth(db))
+		fileGroup.Use(auth.FileAuth())
 		{
 			fileGroup.Static("/files/", "/var/ncloud_upload/")
 			fileGroup.DELETE("/api/files/:id", fileHandler.DeleteFile)

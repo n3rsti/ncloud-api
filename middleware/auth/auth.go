@@ -222,3 +222,7 @@ func CreateHMAC(message string) []byte{
 func CreateBase64URLHMAC(message string) string{
 	return base64.URLEncoding.EncodeToString(CreateHMAC(message))
 }
+
+func VerifyHMAC(message, accessKey string) bool {
+	return CreateBase64URLHMAC(message) == accessKey
+}
