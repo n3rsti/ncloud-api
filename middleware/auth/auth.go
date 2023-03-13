@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"crypto/hmac"
+	"crypto/sha512"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -13,6 +16,7 @@ import (
 )
 
 var SecretKey = helper.GetEnv("SECRET_KEY", "secret")
+var FileSecretKey = helper.GetEnv("FILE_SECRET_KEY", "file_secret")
 
 type SignedClaims struct {
 	Id    string `json:"user_id"`
@@ -206,4 +210,15 @@ func Auth() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+func CreateHMAC(message string) []byte{
+	mac := hmac.New(sha512.New, []byte(FileSecretKey))
+	mac.Write([]byte(message))
+
+
+	return mac.Sum(nil)
+}
+
+func CreateBase64URLHMAC(message string) string{
+	return base64.URLEncoding.EncodeToString(CreateHMAC(message))
 }

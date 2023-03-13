@@ -100,15 +100,21 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	fileAccessKey := auth.CreateBase64URLHMAC(fileId)
+
+	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
+
 	type FileResponse struct {
-		Id   string `json:"id"`
-		Name string `json:"name"`
+		Id        string `json:"id"`
+		Name      string `json:"name"`
+		AccessKey string `json:"access_key"`
 	}
 
 	filesResponse := []FileResponse{
 		{
 			Id:   fileId,
 			Name: file.Filename,
+			AccessKey: fileAccessKey,
 		},
 	}
 
@@ -272,7 +278,7 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *FileHandler) UpdateFile(c *gin.Context){
+func (h *FileHandler) UpdateFile(c *gin.Context) {
 	claims := auth.ExtractClaimsFromContext(c)
 	fileId := c.Param("id")
 
@@ -303,7 +309,6 @@ func (h *FileHandler) UpdateFile(c *gin.Context){
 
 		directoryCollection := h.Db.Collection("directories")
 
-
 		if err := directoryCollection.FindOne(c, bson.D{{"_id", file.ParentDirectory}}).Decode(&result); err != nil {
 			c.Status(http.StatusBadRequest)
 			fmt.Println(err)
@@ -318,7 +323,6 @@ func (h *FileHandler) UpdateFile(c *gin.Context){
 
 	}
 
-
 	// Update file record
 	fileCollection := h.Db.Collection("files")
 
@@ -328,7 +332,6 @@ func (h *FileHandler) UpdateFile(c *gin.Context){
 		c.Status(http.StatusBadRequest)
 		return
 	}
-
 
 	c.Status(http.StatusNoContent)
 }
