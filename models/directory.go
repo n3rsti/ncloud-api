@@ -11,6 +11,7 @@ type Directory struct {
 	ParentDirectory         string             `json:"parent_directory"`
 	ParentDirectoryObjectId primitive.ObjectID `json:"parentDirectoryObjectId"`
 	User                    string             `json:"user"`
+	AccessKey               string             `json:"access_key"`
 }
 
 func (d *Directory) ToBSON() bson.D {

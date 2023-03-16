@@ -1,6 +1,7 @@
 package user
 
 import (
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -45,7 +46,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	user.Password = passwordHash
 
-	_, err = collection.InsertOne(c, user.ToBSON())
+	userInsertResult, err := collection.InsertOne(c, user.ToBSON())
 
 	if err != nil {
 		fmt.Println("Error during DB operation")
@@ -56,7 +57,13 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 
 	// Create main directory without name and parent directory
-	_, _ = collection.InsertOne(c, bson.D{{"user", user.Username}})
+	res, _ := collection.InsertOne(c, bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", ""}})
+
+	fileId := res.InsertedID.(primitive.ObjectID).Hex()
+
+	// Create and set access key to directory
+	fileAccessKey := auth.CreateBase64URLHMAC(fileId)
+	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
 
 	// Remove password so it won't be included in response
 	user.Password = ""
@@ -111,10 +118,20 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
+
+	mainDirAccessKey, err := h.getMainDirectoryAccessKey(c, userId)
+
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+
 	c.IndentedJSON(http.StatusOK, gin.H{
 		"username": loginData.Username,
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
+		"main_directory_access_key": mainDirAccessKey,
 	})
 
 	return
@@ -140,4 +157,17 @@ func (h *UserHandler) RefreshToken(c *gin.Context){
 	c.IndentedJSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
 	})
+}
+
+func (h* UserHandler) getMainDirectoryAccessKey(c *gin.Context, userId string) (string, error){
+	collection := h.Db.Collection("directories")
+
+	var result bson.M
+
+	if err := collection.FindOne(c , bson.D{{"name", ""}, {"user", userId}}).Decode(&result); err != nil {
+		return "", errors.New("error finding directory")
+	}
+
+	return result["access_key"].(string), nil
+
 }

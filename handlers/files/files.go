@@ -139,6 +139,8 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 
 	data.User = user.Id
 
+
+	// Check if user is the owner of the directory where he wants to create directory
 	collection := h.Db.Collection("directories")
 
 	hexId, err := primitive.ObjectIDFromHex(data.ParentDirectory)
@@ -167,7 +169,14 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 	}
 
-	data.Id = res.InsertedID.(primitive.ObjectID).Hex()
+	fileId := res.InsertedID.(primitive.ObjectID).Hex()
+	data.Id = fileId
+
+	// Create and set access key to directory
+	fileAccessKey := auth.CreateBase64URLHMAC(fileId)
+	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
+
+	data.AccessKey = fileAccessKey
 
 	c.IndentedJSON(http.StatusCreated, data)
 }
