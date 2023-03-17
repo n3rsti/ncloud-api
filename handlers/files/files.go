@@ -40,6 +40,17 @@ func getFileContentType(file *multipart.FileHeader) (contentType string, err err
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
 	directory := c.PostForm("directory")
+	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
+	claims := auth.ExtractClaimsFromContext(c)
+
+	if directory == "" {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	if directoryAccessKey == "" || auth.VerifyHMAC(directory, directoryAccessKey) == false {
+		c.Status(http.StatusForbidden)
+	}
 
 	// Convert to ObjectId
 	parentDirObjectId, err := primitive.ObjectIDFromHex(directory)
@@ -48,32 +59,9 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	claims := auth.ExtractClaimsFromContext(c)
-
-	collection := h.Db.Collection("files")
-	dirCollection := h.Db.Collection("directories")
-
-	// Check if user is the owner of directory he wants to files into
-	if directory != "" {
-		var resultDir bson.M
-
-		if err := dirCollection.FindOne(c, bson.D{{"_id", parentDirObjectId}}).Decode(&resultDir); err != nil {
-			c.Status(http.StatusNotFound)
-			return
-		}
-
-		if resultDir["user"] == "" || resultDir["user"] != claims.Id {
-			c.Status(http.StatusForbidden)
-			return
-		}
-	}
 
 	fileContentType, err := getFileContentType(file)
 
-	if err != nil {
-		c.Status(http.StatusBadRequest)
-		return
-	}
 
 	newFile := models.File{
 		Name:            file.Filename,
@@ -82,6 +70,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		Type:            fileContentType,
 		Size:            file.Size,
 	}
+
+	collection := h.Db.Collection("files")
 
 	res, err := collection.InsertOne(c, newFile.ToBSON())
 
@@ -112,8 +102,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	filesResponse := []FileResponse{
 		{
-			Id:   fileId,
-			Name: file.Filename,
+			Id:        fileId,
+			Name:      file.Filename,
 			AccessKey: fileAccessKey,
 		},
 	}
@@ -128,6 +118,13 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
+	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
+
+	if auth.VerifyHMAC(data.ParentDirectory, directoryAccessKey) == false {
+		c.Status(http.StatusForbidden)
+		return
+	}
+
 	if data.Name == "" || data.ParentDirectory == "" {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
 			"error": "empty name or parent directory",
@@ -139,8 +136,6 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 
 	data.User = user.Id
 
-
-	// Check if user is the owner of the directory where he wants to create directory
 	collection := h.Db.Collection("directories")
 
 	hexId, err := primitive.ObjectIDFromHex(data.ParentDirectory)
@@ -148,6 +143,7 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
+	// Check if user is the owner of the directory where he wants to create directory
 	var result bson.M
 
 	if err = collection.FindOne(c, bson.D{{"_id", hexId}}).Decode(&result); err != nil {
@@ -173,10 +169,10 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 	data.Id = fileId
 
 	// Create and set access key to directory
-	fileAccessKey := auth.CreateBase64URLHMAC(fileId)
-	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
+	newDirectoryAccessKey := auth.CreateBase64URLHMAC(fileId)
+	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": newDirectoryAccessKey}}})
 
-	data.AccessKey = fileAccessKey
+	data.AccessKey = newDirectoryAccessKey
 
 	c.IndentedJSON(http.StatusCreated, data)
 }

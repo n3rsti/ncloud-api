@@ -65,9 +65,15 @@ func main() {
 	authorized.Use(auth.Auth())
 	{
 		authorized.POST("/api/upload", fileHandler.Upload)
-		authorized.POST("/api/directories", fileHandler.CreateDirectory)
-		authorized.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
-		authorized.GET("/api/directories", fileHandler.GetDirectoryWithFiles)
+
+
+		directoryGroup := authorized.Group("/api/directories/")
+		directoryGroup.Use(auth.DirectoryAuth())
+		{
+			directoryGroup.GET(":id", fileHandler.GetDirectoryWithFiles)
+			directoryGroup.POST("", fileHandler.CreateDirectory)
+			directoryGroup.GET("", fileHandler.GetDirectoryWithFiles)
+		}
 
 		fileGroup := authorized.Group("/")
 		fileGroup.Use(auth.FileAuth())
