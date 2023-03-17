@@ -39,7 +39,7 @@ func getFileContentType(file *multipart.FileHeader) (contentType string, err err
 
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
-	directory := c.PostForm("directory")
+	directory := c.Param("directoryId")
 	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
 	claims := auth.ExtractClaimsFromContext(c)
 
@@ -112,12 +112,18 @@ func (h *FileHandler) Upload(c *gin.Context) {
 }
 
 func (h *FileHandler) CreateDirectory(c *gin.Context) {
+	parentDirectoryId := c.Param("parentDirectoryId")
+
 	var data models.Directory
 
 	if err := c.BindJSON(&data); err != nil {
 		return
 	}
 
+	// Set parentDirectoryId from URL
+	data.ParentDirectory = parentDirectoryId
+
+	// Verify access key
 	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
 
 	if auth.VerifyHMAC(data.ParentDirectory, directoryAccessKey) == false {

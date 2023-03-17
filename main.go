@@ -64,15 +64,15 @@ func main() {
 	authorized := router.Group("/")
 	authorized.Use(auth.Auth())
 	{
-		authorized.POST("/api/upload", fileHandler.Upload)
 
+		authorized.GET("/api/directories/", fileHandler.GetDirectoryWithFiles)
+		authorized.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
 
-		directoryGroup := authorized.Group("/api/directories/")
+		directoryGroup := authorized.Group("/api/")
 		directoryGroup.Use(auth.DirectoryAuth())
 		{
-			directoryGroup.GET(":id", fileHandler.GetDirectoryWithFiles)
-			directoryGroup.POST("", fileHandler.CreateDirectory)
-			directoryGroup.GET("", fileHandler.GetDirectoryWithFiles)
+			directoryGroup.POST("directories/:parentDirectoryId", fileHandler.CreateDirectory)
+			directoryGroup.POST("upload/:directoryId", fileHandler.Upload)
 		}
 
 		fileGroup := authorized.Group("/")
