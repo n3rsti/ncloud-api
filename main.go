@@ -72,7 +72,7 @@ func main() {
 		directoryGroup.Use(auth.DirectoryAuth())
 		{
 			directoryGroup.POST("directories/:parentDirectoryId", fileHandler.CreateDirectory)
-			directoryGroup.POST("upload/:directoryId", fileHandler.Upload)
+			directoryGroup.POST("upload/:parentDirectoryId", fileHandler.Upload)
 		}
 
 		fileGroup := authorized.Group("/")

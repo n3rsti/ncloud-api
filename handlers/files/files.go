@@ -39,18 +39,9 @@ func getFileContentType(file *multipart.FileHeader) (contentType string, err err
 
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
-	directory := c.Param("directoryId")
-	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
+	directory := c.Param("parentDirectoryId")
 	claims := auth.ExtractClaimsFromContext(c)
 
-	if directory == "" {
-		c.Status(http.StatusBadRequest)
-		return
-	}
-
-	if directoryAccessKey == "" || auth.VerifyHMAC(directory, directoryAccessKey) == false {
-		c.Status(http.StatusForbidden)
-	}
 
 	// Convert to ObjectId
 	parentDirObjectId, err := primitive.ObjectIDFromHex(directory)
@@ -123,15 +114,7 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 	// Set parentDirectoryId from URL
 	data.ParentDirectory = parentDirectoryId
 
-	// Verify access key
-	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
-
-	if auth.VerifyHMAC(data.ParentDirectory, directoryAccessKey) == false {
-		c.Status(http.StatusForbidden)
-		return
-	}
-
-	if data.Name == "" || data.ParentDirectory == "" {
+	if data.Name == "" {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
 			"error": "empty name or parent directory",
 		})
