@@ -80,7 +80,7 @@ func main() {
 		{
 			fileGroup.Static("/files/", "/var/ncloud_upload/")
 			fileGroup.DELETE("/api/files/:id", fileHandler.DeleteFile)
-			fileGroup.PUT("/api/files/:id", fileHandler.UpdateFile)
+			fileGroup.PATCH("/api/files/:id", fileHandler.UpdateFile)
 		}
 
 	}
