@@ -273,52 +273,45 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 }
 
 func (h *FileHandler) UpdateFile(c *gin.Context) {
-	claims := auth.ExtractClaimsFromContext(c)
-	fileId := c.Param("id")
-
-	hexId, err := primitive.ObjectIDFromHex(fileId)
-	if err != nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
-
 	// Bind request body to File model
 	var file models.File
 
-	err = c.MustBindWith(&file, binding.JSON)
-	if err != nil {
+	if err := c.MustBindWith(&file, binding.JSON); err != nil{
 		return
 	}
 
 	// These values can't be edited
 	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" || file.AccessKey != "" {
 		c.Status(http.StatusBadRequest)
+		c.IndentedJSON(http.StatusUnauthorized, gin.H{
+			"error": "attempt to edit restricted fields",
+		})
 		return
 	}
 
-	// If user tries to edit parentDirectoryId (if parentDirectory is set in request body),
-	// check if user is the owner of the folder
+	// Verify new parent directory access key (if user wants to change it)
 	if !file.ParentDirectory.IsZero() {
-		var result bson.M
-
-		directoryCollection := h.Db.Collection("directories")
-
-		if err := directoryCollection.FindOne(c, bson.D{{"_id", file.ParentDirectory}}).Decode(&result); err != nil {
-			c.Status(http.StatusBadRequest)
-			fmt.Println(err)
-			return
-		}
-
-		// Check if user is the owner
-		if result["user"] != claims.Id {
+		parentDirectoryAccessKey := c.GetHeader("DirectoryAccessKey")
+		if auth.VerifyHMAC(file.ParentDirectory.Hex(), parentDirectoryAccessKey) == false {
 			c.Status(http.StatusForbidden)
+			c.IndentedJSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid directory access key",
+			})
 			return
 		}
-
 	}
+
 
 	// Update file record
 	fileCollection := h.Db.Collection("files")
+	fileId := c.Param("id")
+
+
+	hexId, err := primitive.ObjectIDFromHex(fileId)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
 
 	_, err = fileCollection.UpdateByID(c, hexId, bson.D{{"$set", file.ToBSONnotEmpty()}})
 	if err != nil {
