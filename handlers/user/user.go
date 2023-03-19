@@ -119,7 +119,6 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 
-	mainDirAccessKey, err := h.getMainDirectoryAccessKey(c, userId)
 
 	if err != nil {
 		c.Status(http.StatusInternalServerError)
@@ -131,7 +130,6 @@ func (h *UserHandler) Login(c *gin.Context) {
 		"username": loginData.Username,
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
-		"main_directory_access_key": mainDirAccessKey,
 	})
 
 	return
