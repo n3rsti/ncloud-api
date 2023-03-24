@@ -73,8 +73,9 @@ func main() {
 		directoryGroup := authorized.Group("/api/")
 		directoryGroup.Use(auth.DirectoryAuth())
 		{
-			directoryGroup.POST("directories/:parentDirectoryId", directoryHandler.CreateDirectory)
-			directoryGroup.POST("upload/:parentDirectoryId", fileHandler.Upload)
+			directoryGroup.POST("directories/:id", directoryHandler.CreateDirectory)
+			directoryGroup.POST("upload/:id", fileHandler.Upload)
+			directoryGroup.PATCH("directories/:id", directoryHandler.EditDirectory)
 		}
 
 		fileGroup := authorized.Group("/")

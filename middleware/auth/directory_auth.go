@@ -8,7 +8,7 @@ import (
 func DirectoryAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		directoryAccessKey := c.GetHeader("DirectoryAccessKey")
-		directory := c.Param("parentDirectoryId")
+		directory := c.Param("id")
 
 		// Verify access key
 		claims, isValidAccessKey := ValidateAccessKey(directoryAccessKey)

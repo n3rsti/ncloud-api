@@ -8,8 +8,7 @@ import (
 type Directory struct {
 	Id                      string             `json:"id"`
 	Name                    string             `json:"name"`
-	ParentDirectory         string             `json:"parent_directory"`
-	ParentDirectoryObjectId primitive.ObjectID `json:"parentDirectoryObjectId"`
+	ParentDirectory         primitive.ObjectID `json:"parent_directory"`
 	User                    string             `json:"user"`
 	AccessKey               string             `json:"access_key"`
 }
@@ -17,7 +16,20 @@ type Directory struct {
 func (d *Directory) ToBSON() bson.D {
 	return bson.D{
 		{"name", d.Name},
-		{"parent_directory", d.ParentDirectoryObjectId},
+		{"parent_directory", d.ParentDirectory},
 		{"user", d.User},
 	}
+}
+
+func (d *Directory) ToBsonNotEmpty() bson.D {
+	var data bson.D
+
+	if d.Name != "" {
+		data = append(data, bson.E{Key: "name", Value: d.Name})
+	}
+	if !d.ParentDirectory.IsZero() {
+		data = append(data, bson.E{Key: "parent_directory", Value: d.ParentDirectory})
+	}
+
+	return data
 }

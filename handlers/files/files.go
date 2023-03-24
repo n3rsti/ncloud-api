@@ -40,7 +40,7 @@ func getFileContentType(file *multipart.FileHeader) (contentType string, err err
 
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
-	directory := c.Param("parentDirectoryId")
+	directory := c.Param("id")
 	claims := auth.ExtractClaimsFromContext(c)
 
 
@@ -150,9 +150,8 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 
 	// These values can't be edited
 	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" || file.AccessKey != "" {
-		c.Status(http.StatusBadRequest)
-		c.IndentedJSON(http.StatusUnauthorized, gin.H{
-			"error": "attempt to edit restricted fields",
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": "attempt to modify restricted fields",
 		})
 		return
 	}

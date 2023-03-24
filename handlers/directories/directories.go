@@ -87,7 +87,7 @@ func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 }
 
 func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
-	parentDirectoryId := c.Param("parentDirectoryId")
+	parentDirectoryId := c.Param("id")
 
 	var data models.Directory
 
@@ -95,8 +95,13 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
+	hexId, err := primitive.ObjectIDFromHex(parentDirectoryId)
+	if err != nil {
+		return
+	}
+
 	// Set parentDirectoryId from URL
-	data.ParentDirectory = parentDirectoryId
+	data.ParentDirectory = hexId
 
 	if data.Name == "" {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
@@ -111,10 +116,7 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 
 	collection := h.Db.Collection("directories")
 
-	hexId, err := primitive.ObjectIDFromHex(data.ParentDirectory)
-	if err != nil {
-		return
-	}
+
 
 	// Check if user is the owner of the directory where he wants to create directory
 	var result bson.M
@@ -129,7 +131,7 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
-	data.ParentDirectoryObjectId = hexId
+
 
 	res, err := collection.InsertOne(c, data.ToBSON())
 
@@ -148,4 +150,55 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 	data.AccessKey = newDirectoryAccessKey
 
 	c.IndentedJSON(http.StatusCreated, data)
+}
+
+func (h *DirectoryHandler) EditDirectory(c *gin.Context){
+	directoryId := c.Param("id")
+	dirAccessKey := c.GetHeader("DirectoryAccessKey")
+	isAuthorized := auth.ValidatePermissions(dirAccessKey, auth.PermissionModify)
+
+	if isAuthorized == false {
+		c.IndentedJSON(http.StatusForbidden, gin.H{
+			"error": "no modify permission",
+		})
+	}
+
+	var directory models.Directory
+
+	if err := c.ShouldBindJSON(&directory); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": "couldn't bind json data to object",
+		})
+	}
+
+	if directory.User != "" || directory.Id != "" || directory.AccessKey != ""  {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": "attempt to modify restricted fields",
+		})
+		return
+	}
+
+	claims, _ := auth.ValidateAccessKey(dirAccessKey)
+	if claims.Id == directory.ParentDirectory.Hex() {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": "can't set same id and parent_directory_id",
+		})
+	}
+
+	collection := h.Db.Collection("directories")
+
+	directoryObjectId, _ := primitive.ObjectIDFromHex(directoryId)
+
+	_, err := collection.UpdateByID(c, directoryObjectId, bson.D{{"$set", directory.ToBsonNotEmpty()}})
+	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{
+			"error": "couldn't find directory",
+		})
+	}
+
+	return
+
+
+
+
 }
