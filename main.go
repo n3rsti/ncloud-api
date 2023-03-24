@@ -75,7 +75,7 @@ func main() {
 		{
 			directoryGroup.POST("directories/:id", directoryHandler.CreateDirectory)
 			directoryGroup.POST("upload/:id", fileHandler.Upload)
-			directoryGroup.PATCH("directories/:id", directoryHandler.EditDirectory)
+			directoryGroup.PATCH("directories/:id", directoryHandler.ModifyDirectory)
 		}
 
 		fileGroup := authorized.Group("/")

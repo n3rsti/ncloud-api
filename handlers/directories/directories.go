@@ -152,7 +152,7 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, data)
 }
 
-func (h *DirectoryHandler) EditDirectory(c *gin.Context){
+func (h *DirectoryHandler) ModifyDirectory(c *gin.Context){
 	directoryId := c.Param("id")
 	dirAccessKey := c.GetHeader("DirectoryAccessKey")
 	isAuthorized := auth.ValidatePermissions(dirAccessKey, auth.PermissionModify)

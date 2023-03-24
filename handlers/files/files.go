@@ -148,7 +148,7 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 		return
 	}
 
-	// These values can't be edited
+	// These values can't be modified
 	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" || file.AccessKey != "" {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
 			"error": "attempt to modify restricted fields",
