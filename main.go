@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
+	"ncloud-api/handlers/directories"
 	"ncloud-api/handlers/files"
 	"ncloud-api/handlers/user"
 	"ncloud-api/middleware/auth"
@@ -50,6 +51,7 @@ func main() {
 	// Handlers
 	userHandler := user.UserHandler{Db: db}
 	fileHandler := files.FileHandler{Db: db}
+	directoryHandler := directories.DirectoryHandler{Db: db}
 
 	// Setup router
 	router := gin.Default()
@@ -65,13 +67,13 @@ func main() {
 	authorized.Use(auth.Auth())
 	{
 
-		authorized.GET("/api/directories/", fileHandler.GetDirectoryWithFiles)
-		authorized.GET("/api/directories/:id", fileHandler.GetDirectoryWithFiles)
+		authorized.GET("/api/directories/", directoryHandler.GetDirectoryWithFiles)
+		authorized.GET("/api/directories/:id", directoryHandler.GetDirectoryWithFiles)
 
 		directoryGroup := authorized.Group("/api/")
 		directoryGroup.Use(auth.DirectoryAuth())
 		{
-			directoryGroup.POST("directories/:parentDirectoryId", fileHandler.CreateDirectory)
+			directoryGroup.POST("directories/:parentDirectoryId", directoryHandler.CreateDirectory)
 			directoryGroup.POST("upload/:parentDirectoryId", fileHandler.Upload)
 		}
 
