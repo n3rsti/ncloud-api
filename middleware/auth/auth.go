@@ -1,9 +1,6 @@
 package auth
 
 import (
-	"crypto/hmac"
-	"crypto/sha512"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -145,6 +142,22 @@ func ValidateAccessKey(accessKey string)(claims *FileClaims, valid bool){
 	return claims, true
 }
 
+// ValidatePermissions MUST only be used after ValidateAccessKey function
+func ValidatePermissions(accessKey, permission string) bool {
+	token, _ := jwt.ParseWithClaims(
+		accessKey,
+		&FileClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(FileSecretKey), nil
+		})
+
+	claims, _ := token.Claims.(*FileClaims)
+	if helper.StringArrayContains(claims.Permissions, permission){
+		return true
+	}
+	return false
+}
+
 func ValidateToken(signedToken string) (claims *SignedClaims, err error) {
 	token, err := jwt.ParseWithClaims(
 		signedToken,
@@ -256,17 +269,4 @@ func Auth() gin.HandlerFunc {
 		c.Next()
 	}
 }
-func CreateHMAC(message string) []byte {
-	mac := hmac.New(sha512.New, []byte(FileSecretKey))
-	mac.Write([]byte(message))
 
-	return mac.Sum(nil)
-}
-
-func CreateBase64URLHMAC(message string) string {
-	return base64.URLEncoding.EncodeToString(CreateHMAC(message))
-}
-
-func VerifyHMAC(message, accessKey string) bool {
-	return CreateBase64URLHMAC(message) == accessKey
-}
