@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
@@ -12,13 +11,12 @@ func DirectoryAuth() gin.HandlerFunc {
 		directory := c.Param("parentDirectoryId")
 
 		// Verify access key
-		if directoryAccessKey == "" || VerifyHMAC(directory, directoryAccessKey) == false {
-			fmt.Println(directoryAccessKey, directory)
+		claims, isValidAccessKey := ValidateAccessKey(directoryAccessKey)
+		if isValidAccessKey == false || directoryAccessKey == "" || claims.Id != directory {
 			c.Status(http.StatusForbidden)
 			c.Abort()
 			return
 		}
-
 		c.Next()
 	}
 }

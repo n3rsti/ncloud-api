@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
+	"ncloud-api/utils/helper"
 	"net/http"
 	"os"
 )
@@ -81,7 +82,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	fileAccessKey := auth.CreateBase64URLHMAC(fileId)
+	permissions := auth.AllFilePermissions
+	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions)
 
 	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
 
@@ -158,7 +160,7 @@ func (h *FileHandler) CreateDirectory(c *gin.Context) {
 	data.Id = fileId
 
 	// Create and set access key to directory
-	newDirectoryAccessKey := auth.CreateBase64URLHMAC(fileId)
+	newDirectoryAccessKey, err := auth.GenerateFileAccessKey(fileId, auth.AllDirectoryPermissions)
 	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": newDirectoryAccessKey}}})
 
 	data.AccessKey = newDirectoryAccessKey
@@ -292,10 +294,19 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 	// Verify new parent directory access key (if user wants to change it)
 	if !file.ParentDirectory.IsZero() {
 		parentDirectoryAccessKey := c.GetHeader("DirectoryAccessKey")
-		if auth.VerifyHMAC(file.ParentDirectory.Hex(), parentDirectoryAccessKey) == false {
-			c.Status(http.StatusForbidden)
-			c.IndentedJSON(http.StatusUnauthorized, gin.H{
+
+		claims, validAccessKey := auth.ValidateAccessKey(parentDirectoryAccessKey)
+
+		if validAccessKey == false {
+			c.IndentedJSON(http.StatusForbidden, gin.H{
 				"error": "invalid directory access key",
+			})
+			return
+		}
+
+		if helper.StringArrayContains(claims.Permissions, auth.PermissionModify) == false {
+			c.IndentedJSON(http.StatusForbidden, gin.H{
+				"error": "no permissions to modify",
 			})
 			return
 		}

@@ -62,7 +62,8 @@ func (h *UserHandler) Register(c *gin.Context) {
 	fileId := res.InsertedID.(primitive.ObjectID).Hex()
 
 	// Create and set access key to directory
-	fileAccessKey := auth.CreateBase64URLHMAC(fileId)
+	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
+	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions)
 	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
 
 	// Remove password so it won't be included in response

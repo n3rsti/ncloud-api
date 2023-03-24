@@ -24,6 +24,12 @@ type SignedClaims struct {
 	jwt.RegisteredClaims
 }
 
+type FileClaims struct {
+	Id          string   `json:"id"`
+	Permissions []string `json:"permissions"`
+	jwt.RegisteredClaims
+}
+
 func GenerateTokens(userId string) (accessToken, refreshToken string, err error) {
 	newToken, err := generateAccessToken(userId)
 	if err != nil {
@@ -98,6 +104,45 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 
 	return newToken, nil
 
+}
+
+func GenerateFileAccessKey(id string, permissions []string)(string, error) {
+	claims := &FileClaims{
+		Id:          id,
+		Permissions: permissions,
+	}
+
+	newToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).SignedString([]byte(FileSecretKey))
+	if err != nil {
+		return "", err
+	}
+
+	return newToken, nil
+}
+
+func ValidateAccessKey(accessKey string)(claims *FileClaims, valid bool){
+	token, err := jwt.ParseWithClaims(
+		accessKey,
+		&FileClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(FileSecretKey), nil
+		})
+
+	if err != nil {
+		return &FileClaims{}, false
+	}
+
+	claims, ok := token.Claims.(*FileClaims)
+	if !ok {
+		err = errors.New("couldn't parse claims")
+		return
+	}
+
+	if !ok {
+		return &FileClaims{}, false
+	}
+
+	return claims, true
 }
 
 func ValidateToken(signedToken string) (claims *SignedClaims, err error) {
@@ -211,15 +256,14 @@ func Auth() gin.HandlerFunc {
 		c.Next()
 	}
 }
-func CreateHMAC(message string) []byte{
+func CreateHMAC(message string) []byte {
 	mac := hmac.New(sha512.New, []byte(FileSecretKey))
 	mac.Write([]byte(message))
-
 
 	return mac.Sum(nil)
 }
 
-func CreateBase64URLHMAC(message string) string{
+func CreateBase64URLHMAC(message string) string {
 	return base64.URLEncoding.EncodeToString(CreateHMAC(message))
 }
 

@@ -5,6 +5,11 @@ import (
 	"net/http"
 )
 
+type AccessKey struct {
+	Id string
+	Permissions []string
+}
+
 func FileAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fileAccessKey := c.GetHeader("FileAccessKey")
@@ -14,7 +19,9 @@ func FileAuth() gin.HandlerFunc {
 			idParam = c.Request.RequestURI[len("/files/"):]
 		}
 
-		if VerifyHMAC(idParam, fileAccessKey) == false {
+
+		claims, isValidAccessKey := ValidateAccessKey(fileAccessKey)
+		if isValidAccessKey == false || claims.Id != idParam {
 			c.Status(http.StatusForbidden)
 			c.Abort()
 			return
