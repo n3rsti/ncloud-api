@@ -28,7 +28,6 @@ func (h *UserHandler) Register(c *gin.Context) {
 	}
 
 	user.TrashAccessKey = ""
-	user.MainDirAccessKey = ""
 
 	if err := validator.Validate(user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -76,10 +75,11 @@ func (h *UserHandler) Register(c *gin.Context) {
 	mainDirAccessKey, err := auth.GenerateFileAccessKey(mainDirId, permissions)
 	trashAccessKey, err := auth.GenerateFileAccessKey(trashId, permissions)
 
+	collection.UpdateByID(c, res.InsertedIDs[0], bson.D{{"$set", bson.M{"access_key": mainDirAccessKey}}})
+
 	collection = h.Db.Collection("user")
 	collection.UpdateByID(c, userInsertResult.InsertedID,
 		bson.D{{"$set", bson.D{
-			{"main_dir_access_key", mainDirAccessKey},
 			{"trash_access_key", trashAccessKey},
 		}}},
 	)
@@ -141,14 +141,12 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	mainDirAccessKey := result["main_dir_access_key"].(string)
 	trashAccessKey := result["trash_access_key"].(string)
 
 	c.IndentedJSON(http.StatusOK, gin.H{
 		"username":      loginData.Username,
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
-		"main_dir_access_key": mainDirAccessKey,
 		"trash_access_key": trashAccessKey,
 	})
 
