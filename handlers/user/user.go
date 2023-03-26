@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"gopkg.in/validator.v2"
 	"log"
 	"ncloud-api/middleware/auth"
@@ -25,6 +26,9 @@ func (h *UserHandler) Register(c *gin.Context) {
 	if err := c.BindJSON(&user); err != nil {
 		return
 	}
+
+	user.TrashAccessKey = ""
+	user.MainDirAccessKey = ""
 
 	if err := validator.Validate(user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -55,16 +59,30 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	collection = h.Db.Collection("directories")
 
+	// Create trash and main directory documents
+	docs := []interface{}{
+		bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", ""}},
+		bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", "trash"}},
+	}
 
-	// Create main directory without name and parent directory
-	res, _ := collection.InsertOne(c, bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", ""}})
+	opts := options.InsertMany().SetOrdered(true)
+	res, _ := collection.InsertMany(c, docs, opts)
 
-	fileId := res.InsertedID.(primitive.ObjectID).Hex()
+	// Generate access keys for created directories
+	mainDirId := res.InsertedIDs[0].(primitive.ObjectID).Hex()
+	trashId := res.InsertedIDs[1].(primitive.ObjectID).Hex()
 
-	// Create and set access key to directory
 	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
-	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions)
-	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
+	mainDirAccessKey, err := auth.GenerateFileAccessKey(mainDirId, permissions)
+	trashAccessKey, err := auth.GenerateFileAccessKey(trashId, permissions)
+
+	collection = h.Db.Collection("user")
+	collection.UpdateByID(c, userInsertResult.InsertedID,
+		bson.D{{"$set", bson.D{
+			{"main_dir_access_key", mainDirAccessKey},
+			{"trash_access_key", trashAccessKey},
+		}}},
+	)
 
 	// Remove password so it won't be included in response
 	user.Password = ""
@@ -112,31 +130,32 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	userId := result["_id"].(primitive.ObjectID).Hex()
 
-
 	accessToken, refreshToken, err := auth.GenerateTokens(userId)
 	if err != nil {
 		log.Panic(err)
 		return
 	}
 
-
-
 	if err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
 
+	mainDirAccessKey := result["main_dir_access_key"].(string)
+	trashAccessKey := result["trash_access_key"].(string)
 
 	c.IndentedJSON(http.StatusOK, gin.H{
-		"username": loginData.Username,
+		"username":      loginData.Username,
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
+		"main_dir_access_key": mainDirAccessKey,
+		"trash_access_key": trashAccessKey,
 	})
 
 	return
 }
 
-func (h *UserHandler) RefreshToken(c *gin.Context){
+func (h *UserHandler) RefreshToken(c *gin.Context) {
 	token := c.GetHeader("Authorization")
 
 	if len(token) < len("Bearer ") {
@@ -158,12 +177,12 @@ func (h *UserHandler) RefreshToken(c *gin.Context){
 	})
 }
 
-func (h* UserHandler) getMainDirectoryAccessKey(c *gin.Context, userId string) (string, error){
+func (h *UserHandler) getMainDirectoryAccessKey(c *gin.Context, userId string) (string, error) {
 	collection := h.Db.Collection("directories")
 
 	var result bson.M
 
-	if err := collection.FindOne(c , bson.D{{"name", ""}, {"user", userId}}).Decode(&result); err != nil {
+	if err := collection.FindOne(c, bson.D{{"name", ""}, {"user", userId}}).Decode(&result); err != nil {
 		return "", errors.New("error finding directory")
 	}
 
