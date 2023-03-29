@@ -90,6 +90,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		Id        string `json:"id"`
 		Name      string `json:"name"`
 		AccessKey string `json:"access_key"`
+		Directory string `json:"parent_directory"`
 	}
 
 	filesResponse := []FileResponse{
@@ -97,6 +98,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 			Id:        fileId,
 			Name:      file.Filename,
 			AccessKey: fileAccessKey,
+			Directory: directory,
 		},
 	}
 
@@ -156,7 +158,7 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 	}
 
 	// Verify new parent directory access key (if user wants to change it)
-	if !file.ParentDirectory.IsZero() {
+	if !file.ParentDirectory.IsZero() && c.GetHeader("DirectoryAccessKey") != "" {
 		parentDirectoryAccessKey := c.GetHeader("DirectoryAccessKey")
 
 		_, validAccessKey := auth.ValidateAccessKey(parentDirectoryAccessKey)
@@ -167,6 +169,30 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 			})
 			return
 		}
+	} else if !file.ParentDirectory.IsZero() && c.GetHeader("DirectoryAccessKey") == "" {
+		// If user don't provide directory access key, we perform database check for directory ownership
+		var result bson.M
+
+		directoryCollection := h.Db.Collection("directories")
+		err := directoryCollection.FindOne(c, bson.D{{"_id", file.ParentDirectory}}).Decode(&result)
+		if err != nil {
+			c.IndentedJSON(http.StatusBadRequest, gin.H{
+				"error": "new parent directory not found",
+			})
+
+			return
+		}
+
+		claims := auth.ExtractClaimsFromContext(c)
+
+		if result["user"] != claims.Id {
+			c.IndentedJSON(http.StatusForbidden, gin.H{
+				"error": "no access to new parent directory",
+			})
+			return
+		}
+
+
 	}
 
 

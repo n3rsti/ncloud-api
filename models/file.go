@@ -6,13 +6,14 @@ import (
 )
 
 type File struct {
-	Id              string             `json:"id"`
-	Name            string             `json:"name"`
-	ParentDirectory primitive.ObjectID `json:"parent_directory,omitempty"`
-	User            string             `json:"user"`
-	Type            string             `json:"type"`
-	Size            int64              `json:"size"`
-	AccessKey       string             `json:"access_key"`
+	Id                      string             `json:"id"`
+	Name                    string             `json:"name"`
+	ParentDirectory         primitive.ObjectID `json:"parent_directory,omitempty"`
+	PreviousParentDirectory primitive.ObjectID `json:"previous_parent_directory,omitempty"`
+	User                    string             `json:"user"`
+	Type                    string             `json:"type"`
+	Size                    int64              `json:"size"`
+	AccessKey               string             `json:"access_key"`
 }
 
 func (f *File) ToBSON() bson.D {
@@ -40,6 +41,9 @@ func (f *File) ToBSONnotEmpty() bson.D {
 	}
 	if !f.ParentDirectory.IsZero() {
 		data = append(data, bson.E{Key: "parent_directory", Value: f.ParentDirectory})
+	}
+	if !f.PreviousParentDirectory.IsZero() {
+		data = append(data, bson.E{Key: "previous_parent_directory", Value: f.PreviousParentDirectory})
 	}
 	if f.Type != "" {
 		data = append(data, bson.E{Key: "type", Value: f.Type})
