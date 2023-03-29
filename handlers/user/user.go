@@ -61,7 +61,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	// Create trash and main directory documents
 	docs := []interface{}{
 		bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", ""}},
-		bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", "trash"}},
+		bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", "Trash"}},
 	}
 
 	opts := options.InsertMany().SetOrdered(true)

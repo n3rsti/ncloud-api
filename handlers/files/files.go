@@ -11,7 +11,6 @@ import (
 	"mime/multipart"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
-	"ncloud-api/utils/helper"
 	"net/http"
 	"os"
 )
@@ -160,18 +159,11 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 	if !file.ParentDirectory.IsZero() {
 		parentDirectoryAccessKey := c.GetHeader("DirectoryAccessKey")
 
-		claims, validAccessKey := auth.ValidateAccessKey(parentDirectoryAccessKey)
+		_, validAccessKey := auth.ValidateAccessKey(parentDirectoryAccessKey)
 
 		if validAccessKey == false {
 			c.IndentedJSON(http.StatusForbidden, gin.H{
 				"error": "invalid directory access key",
-			})
-			return
-		}
-
-		if helper.StringArrayContains(claims.Permissions, auth.PermissionModify) == false {
-			c.IndentedJSON(http.StatusForbidden, gin.H{
-				"error": "no permissions to modify",
 			})
 			return
 		}
