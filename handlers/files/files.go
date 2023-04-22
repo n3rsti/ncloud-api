@@ -42,7 +42,6 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	directory := c.Param("id")
 	claims := auth.ExtractClaimsFromContext(c)
 
-
 	// Convert to ObjectId
 	parentDirObjectId, err := primitive.ObjectIDFromHex(directory)
 	if err != nil {
@@ -50,9 +49,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-
 	fileContentType, err := getFileContentType(file)
-
 
 	newFile := models.File{
 		Name:            file.Filename,
@@ -91,6 +88,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		Name      string `json:"name"`
 		AccessKey string `json:"access_key"`
 		Directory string `json:"parent_directory"`
+		Type      string `json:"type"`
+		Size      int64  `json:"size"`
 	}
 
 	filesResponse := []FileResponse{
@@ -99,6 +98,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 			Name:      file.Filename,
 			AccessKey: fileAccessKey,
 			Directory: directory,
+			Type:      fileContentType,
+			Size:      file.Size,
 		},
 	}
 
@@ -145,7 +146,7 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 	// Bind request body to File model
 	var file models.File
 
-	if err := c.MustBindWith(&file, binding.JSON); err != nil{
+	if err := c.MustBindWith(&file, binding.JSON); err != nil {
 		return
 	}
 
@@ -192,14 +193,11 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 			return
 		}
 
-
 	}
-
 
 	// Update file record
 	fileCollection := h.Db.Collection("files")
 	fileId := c.Param("id")
-
 
 	hexId, err := primitive.ObjectIDFromHex(fileId)
 	if err != nil {
