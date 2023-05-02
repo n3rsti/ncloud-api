@@ -196,6 +196,8 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context){
 		})
 	}
 
+	c.Status(http.StatusNoContent)
+
 	return
 
 

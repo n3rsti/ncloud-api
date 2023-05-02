@@ -130,14 +130,13 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 
 	collection := h.Db.Collection("files")
 
-	res, err := collection.DeleteOne(c, bson.D{{"_id", hexFileId}})
+	_, err = collection.DeleteOne(c, bson.D{{"_id", hexFileId}})
 
 	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
 
-	fmt.Println(res.DeletedCount)
 
 	c.Status(http.StatusNoContent)
 }
