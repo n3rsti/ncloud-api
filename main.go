@@ -60,6 +60,7 @@ func main() {
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)
 	router.GET("/api/token/refresh", userHandler.RefreshToken)
+	router.DELETE("/api/directories/:id", directoryHandler.DeleteDirectory)
 
 	router.MaxMultipartMemory = 8 << 20 // 8 MiB
 

@@ -1,6 +1,7 @@
 package directories
 
 import (
+	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -116,8 +117,6 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 
 	collection := h.Db.Collection("directories")
 
-
-
 	// Check if user is the owner of the directory where he wants to create directory
 	var result bson.M
 
@@ -130,8 +129,6 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 		c.Status(http.StatusForbidden)
 		return
 	}
-
-
 
 	res, err := collection.InsertOne(c, data.ToBSON())
 
@@ -152,7 +149,7 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, data)
 }
 
-func (h *DirectoryHandler) ModifyDirectory(c *gin.Context){
+func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 	directoryId := c.Param("id")
 	dirAccessKey := c.GetHeader("DirectoryAccessKey")
 	isAuthorized := auth.ValidatePermissions(dirAccessKey, auth.PermissionModify)
@@ -171,7 +168,7 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context){
 		})
 	}
 
-	if directory.User != "" || directory.Id != "" || directory.AccessKey != ""  {
+	if directory.User != "" || directory.Id != "" || directory.AccessKey != "" {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
 			"error": "attempt to modify restricted fields",
 		})
@@ -200,7 +197,79 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context){
 
 	return
 
+}
+/* Return all the directories from directory tree
 
+	Return type:
+		Array of ObjectID elements
 
+	Example:
 
+		|-- dir1
+		|   `-- dir3
+		|       `-- dir5
+		|           `-- dir8
+		|-- dir2
+			`-- dir4
+				|-- dir6
+				`-- dir7
+					`-- dir9
+	Return:
+		[dir1, dir2, dir3, ..., dir9]
+
+*/
+func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentDirectory []primitive.ObjectID) []primitive.ObjectID {
+	var allDirectories []primitive.ObjectID
+
+	for _, childDirectory := range parentDirectory {
+		allDirectories = append(allDirectories, childDirectory)
+		for _, arrVal := range filterDirectories(data, data[childDirectory]) {
+			allDirectories = append(allDirectories, arrVal)
+		}
+	}
+
+	return allDirectories
+
+}
+
+func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
+	claims := auth.ExtractClaimsFromContext(c)
+	user := claims.Id
+	directoryId := c.Param("id")
+
+	collection := h.Db.Collection("directories")
+
+	// Get all directories with user from claims, with existing parent_directory:
+	// everything except trash, main directory and potential future directories that can't be deleted anyway
+	cursor, err := collection.Find(context.TODO(), bson.D{{"user", user}, {"parent_directory", bson.D{{"$exists", true}}}})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var results []bson.M
+	if err = cursor.All(context.TODO(), &results); err != nil {
+		log.Fatal(err)
+	}
+
+	/*
+		Map folders into hash map in format:
+		parent_directory: [child_directory1, child_directory2, ...]
+
+		(parent and child directories are in ObjectID type for easier filtering)
+	*/
+
+	dict := make(map[primitive.ObjectID][]primitive.ObjectID, len(results))
+	for _, result := range results {
+		resId := result["parent_directory"].(primitive.ObjectID)
+
+		value, ok := dict[resId]
+		if ok {
+			dict[resId] = append(value, result["_id"].(primitive.ObjectID))
+		} else {
+			dict[resId] = []primitive.ObjectID{result["_id"].(primitive.ObjectID)}
+		}
+	}
+
+	dirIdObjectId, _ := primitive.ObjectIDFromHex(directoryId)
+	fmt.Println(filterDirectories(dict, dict[dirIdObjectId]))
 }
