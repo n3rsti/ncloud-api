@@ -10,10 +10,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"gopkg.in/validator.v2"
 	"log"
+	"ncloud-api/handlers/files"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"ncloud-api/utils/crypto"
 	"net/http"
+	"os"
 )
 
 type UserHandler struct {
@@ -70,6 +72,14 @@ func (h *UserHandler) Register(c *gin.Context) {
 	// Generate access keys for created directories
 	mainDirId := res.InsertedIDs[0].(primitive.ObjectID).Hex()
 	trashId := res.InsertedIDs[1].(primitive.ObjectID).Hex()
+
+	// TODO: do something on error
+	if err := os.Mkdir(files.UploadDestination + mainDirId, 0700); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.Mkdir(files.UploadDestination + trashId, 0700); err != nil {
+		log.Fatal(err)
+	}
 
 	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
 	mainDirAccessKey, err := auth.GenerateFileAccessKey(mainDirId, permissions)

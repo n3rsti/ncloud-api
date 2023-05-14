@@ -142,7 +142,7 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 	fileId := res.InsertedID.(primitive.ObjectID).Hex()
 	data.Id = fileId
 
-	if err := os.Mkdir(files.UploadDestination + fileId, 0600); err != nil {
+	if err := os.Mkdir(files.UploadDestination + fileId, 0700); err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
