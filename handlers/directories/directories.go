@@ -11,6 +11,7 @@ import (
 	"ncloud-api/handlers/files"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
+	"ncloud-api/utils/helper"
 	"net/http"
 	"os"
 )
@@ -240,6 +241,16 @@ func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentD
 }
 
 func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
+	// Verify permissions from access key
+	directoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
+	if !helper.StringArrayContains(directoryAccessKey.Permissions, auth.PermissionDelete) {
+		c.IndentedJSON(http.StatusForbidden, gin.H{
+			"error": "no permission to delete this directory",
+		})
+		return
+	}
+
+
 	claims := auth.ExtractClaimsFromContext(c)
 	user := claims.Id
 	directoryId := c.Param("id")
