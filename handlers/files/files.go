@@ -115,6 +115,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 // To avoid confusion: user is already authenticated and authorized at this point from file_auth
 func (h *FileHandler) DeleteFile(c *gin.Context) {
 	fileId := c.Param("id")
+	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
+	parentDirectory := fileAccessKey.ParentDirectory
 
 	// Convert to ObjectID
 	hexFileId, err := primitive.ObjectIDFromHex(fileId)
@@ -124,7 +126,7 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 	}
 
 	// Remove file
-	err = os.Remove("/var/ncloud_upload/" + fileId)
+	err = os.Remove(UploadDestination + parentDirectory + "/" + fileId)
 	if err != nil {
 		c.Status(http.StatusBadRequest)
 		return

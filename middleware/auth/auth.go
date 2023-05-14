@@ -109,6 +109,8 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 // generates access key for file or directory with parameters:
 // 		id, permissions, parentDirectory (optional)
 // parentDirectory should only be used for files and doesn't need to be verified before
+//
+// although parentDirectory is optional as function argument, it is MANDATORY to use parentDirectory for files
 //     fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
 //     if err != nil {
 //         log.Fatal(err)
