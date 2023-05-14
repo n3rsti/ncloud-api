@@ -277,6 +277,34 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 		}
 	}
 
+	// Convert string id to ObjectID
 	dirIdObjectId, _ := primitive.ObjectIDFromHex(directoryId)
-	fmt.Println(filterDirectories(dict, dict[dirIdObjectId]))
+
+	// Create list of directories to delete: directory to delete and all directories inside
+	directoryList := filterDirectories(dict, dict[dirIdObjectId])
+	directoryList = append(directoryList, dirIdObjectId)
+
+
+	// Remove all file documents from DB
+	collection = h.Db.Collection("files")
+
+	_, err = collection.DeleteMany(context.TODO(), bson.D{{"parent_directory", bson.D{{"$in", directoryList}}}})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Remove all directories documents from DB
+	collection = h.Db.Collection("directories")
+
+	_, err = collection.DeleteMany(context.TODO(), bson.D{{"_id", bson.D{{"$in", directoryList}}}})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Remove all directories (with files) from disk
+	for _, directory := range directoryList {
+		if err = os.RemoveAll(files.UploadDestination + directory.Hex()); err != nil {
+			log.Fatal(err)
+		}
+	}
 }
