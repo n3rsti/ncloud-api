@@ -143,7 +143,7 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 	fileId := res.InsertedID.(primitive.ObjectID).Hex()
 	data.Id = fileId
 
-	if err := os.Mkdir(files.UploadDestination + fileId, 0700); err != nil {
+	if err := os.Mkdir(files.UploadDestination+fileId, 0700); err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
@@ -206,25 +206,29 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 	return
 
 }
-/* Return all the directories from directory tree
 
-	Return type:
-		Array of ObjectID elements
+/*
+	Return all the directories from directory tree
 
-	Example:
+Return type:
 
-		|-- dir1
-		|   `-- dir3
-		|       `-- dir5
-		|           `-- dir8
-		|-- dir2
-			`-- dir4
-				|-- dir6
-				`-- dir7
-					`-- dir9
-	Return:
-		[dir1, dir2, dir3, ..., dir9]
+	Array of ObjectID elements
 
+Example:
+
+	|-- dir1
+	|   `-- dir3
+	|       `-- dir5
+	|           `-- dir8
+	|-- dir2
+		`-- dir4
+			|-- dir6
+			`-- dir7
+				`-- dir9
+
+Return:
+
+	[dir1, dir2, dir3, ..., dir9]
 */
 func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentDirectory []primitive.ObjectID) []primitive.ObjectID {
 	var allDirectories []primitive.ObjectID
@@ -249,7 +253,6 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 		})
 		return
 	}
-
 
 	claims := auth.ExtractClaimsFromContext(c)
 	user := claims.Id
@@ -295,7 +298,6 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 	directoryList := filterDirectories(dict, dict[dirIdObjectId])
 	directoryList = append(directoryList, dirIdObjectId)
 
-
 	// Remove all file documents from DB
 	collection = h.Db.Collection("files")
 
@@ -318,4 +320,6 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 			log.Println(err)
 		}
 	}
+
+	c.Status(http.StatusNoContent)
 }
