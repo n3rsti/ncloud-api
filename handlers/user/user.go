@@ -75,10 +75,10 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	// TODO: do something on error
 	if err := os.Mkdir(files.UploadDestination + mainDirId, 0700); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	if err := os.Mkdir(files.UploadDestination + trashId, 0700); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	permissions := []string{auth.PermissionRead, auth.PermissionUpload}

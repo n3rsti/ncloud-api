@@ -66,13 +66,13 @@ func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 	cursor, err := collection.Aggregate(c, mongo.Pipeline{lookupStage, lookupStage2, matchStage})
 
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	// map results to bson.M
 	var results []bson.M
 	if err = cursor.All(c, &results); err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 
 	if len(results) == 0 {
@@ -261,12 +261,12 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 	// everything except trash, main directory and potential future directories that can't be deleted anyway
 	cursor, err := collection.Find(context.TODO(), bson.D{{"user", user}, {"parent_directory", bson.D{{"$exists", true}}}})
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	var results []bson.M
 	if err = cursor.All(context.TODO(), &results); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	/*
@@ -301,7 +301,7 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 
 	_, err = collection.DeleteMany(context.TODO(), bson.D{{"parent_directory", bson.D{{"$in", directoryList}}}})
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	// Remove all directories documents from DB
@@ -309,13 +309,13 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 
 	_, err = collection.DeleteMany(context.TODO(), bson.D{{"_id", bson.D{{"$in", directoryList}}}})
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	// Remove all directories (with files) from disk
 	for _, directory := range directoryList {
 		if err = os.RemoveAll(files.UploadDestination + directory.Hex()); err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 	}
 }
