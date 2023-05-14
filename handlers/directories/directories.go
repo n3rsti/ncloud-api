@@ -8,9 +8,11 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
+	"ncloud-api/handlers/files"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"net/http"
+	"os"
 )
 
 type DirectoryHandler struct {
@@ -139,6 +141,11 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 
 	fileId := res.InsertedID.(primitive.ObjectID).Hex()
 	data.Id = fileId
+
+	if err := os.Mkdir(files.UploadDestination + fileId, 0600); err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
 
 	// Create and set access key to directory
 	newDirectoryAccessKey, err := auth.GenerateFileAccessKey(fileId, auth.AllDirectoryPermissions)

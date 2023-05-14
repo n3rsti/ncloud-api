@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"ncloud-api/utils/helper"
 	"net/http"
@@ -104,12 +105,32 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 
 }
 
+// GenerateFileAccessKey
+// generates access key for file or directory with parameters:
+// 		id, permissions, parentDirectory (optional)
+// parentDirectory should only be used for files and doesn't need to be verified before
+//     fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
+//     if err != nil {
+//         log.Fatal(err)
+//     }
+//     fmt.Println(fileAccessKey.id)
+//     fmt.Println(fileAccessKey.permissions)
+//
 func GenerateFileAccessKey(id string, permissions []string, parentDirectory ...string) (string, error) {
+	// Verify id format
+	if _, err := primitive.ObjectIDFromHex(id); err != nil {
+		return "", err
+	}
 	claims := &FileClaims{
 		Id:          id,
 		Permissions: permissions,
 	}
 	if len(parentDirectory) > 0 {
+		// verify parent directory format
+		if _, err := primitive.ObjectIDFromHex(parentDirectory[0]); err != nil {
+			return "", err
+		}
+
 		claims.ParentDirectory = parentDirectory[0]
 	}
 

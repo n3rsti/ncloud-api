@@ -15,7 +15,7 @@ import (
 	"os"
 )
 
-const uploadDestination = "/var/ncloud_upload/"
+const UploadDestination = "/var/ncloud_upload/"
 
 type FileHandler struct {
 	Db *mongo.Database
@@ -72,7 +72,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	// Convert ID to string
 	fileId := res.InsertedID.(primitive.ObjectID).Hex()
 
-	if err = c.SaveUploadedFile(file, uploadDestination+fileId); err != nil {
+	if err = c.SaveUploadedFile(file, UploadDestination+ directory + "/" + fileId); err != nil {
 		// Remove file document if saving it wasn't successful
 		_, _ = collection.DeleteOne(c, bson.D{{"_id", res.InsertedID}})
 		log.Panic(err)
@@ -80,6 +80,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	}
 
 	permissions := auth.AllFilePermissions
+	// No need to verify directory, because it is verified by parsing it to primitive.ObjectID (parentDirObjectId)
 	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
 
 	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
@@ -213,4 +214,12 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func (h *FileHandler) GetFile(c *gin.Context){
+	// Don't need to validate access key, because it is verified in FileAuth
+	fileAccessKey := c.GetHeader("FileAccessKey")
+	claims, _ := auth.ValidateAccessKey(fileAccessKey)
+
+	c.File(UploadDestination + claims.ParentDirectory + "/" + claims.Id)
 }

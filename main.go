@@ -82,7 +82,7 @@ func main() {
 		fileGroup := authorized.Group("/")
 		fileGroup.Use(auth.FileAuth())
 		{
-			fileGroup.Static("/files/", "/var/ncloud_upload/")
+			fileGroup.GET("/files/:id", fileHandler.GetFile)
 			fileGroup.DELETE("/api/files/:id", fileHandler.DeleteFile)
 			fileGroup.PATCH("/api/files/:id", fileHandler.UpdateFile)
 		}
