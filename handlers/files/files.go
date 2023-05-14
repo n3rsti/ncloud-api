@@ -198,11 +198,24 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 
 	}
 
+	// If parentDirectory is changed, move file to a new parentDirectory on disk
 	if !file.ParentDirectory.IsZero() {
-		os.Rename(
+		if err := os.Rename(
 			UploadDestination+fileAccessKey.ParentDirectory+"/"+fileAccessKey.Id,
 			UploadDestination+file.ParentDirectory.Hex()+"/"+fileAccessKey.Id,
-		)
+		); err != nil {
+			log.Print(err)
+		}
+
+		// Update access key: copy previous access key, but replace parentDirectory with a new one
+		updatedAccessKey, err := auth.GenerateFileAccessKey(fileAccessKey.Id, fileAccessKey.Permissions, file.ParentDirectory.Hex())
+		if err != nil {
+			log.Print(err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+
+		file.AccessKey = updatedAccessKey
 	}
 
 	// Update file record
