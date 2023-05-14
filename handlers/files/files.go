@@ -42,7 +42,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	directory := c.Param("id")
 	claims := auth.ExtractClaimsFromContext(c)
 
-	// Convert to ObjectId
+	// Convert directoryId to ObjectId
+	// There is no need to verify it because it is verified in directoryAuth
 	parentDirObjectId, err := primitive.ObjectIDFromHex(directory)
 	if err != nil {
 		c.Status(http.StatusBadRequest)
@@ -79,7 +80,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	}
 
 	permissions := auth.AllFilePermissions
-	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions)
+	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
 
 	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
 

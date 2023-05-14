@@ -22,8 +22,9 @@ type SignedClaims struct {
 }
 
 type FileClaims struct {
-	Id          string   `json:"id"`
-	Permissions []string `json:"permissions"`
+	Id              string   `json:"id"`
+	Permissions     []string `json:"permissions"`
+	ParentDirectory string   `json:"parent_directory,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -103,10 +104,13 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 
 }
 
-func GenerateFileAccessKey(id string, permissions []string)(string, error) {
+func GenerateFileAccessKey(id string, permissions []string, parentDirectory ...string) (string, error) {
 	claims := &FileClaims{
 		Id:          id,
 		Permissions: permissions,
+	}
+	if len(parentDirectory) > 0 {
+		claims.ParentDirectory = parentDirectory[0]
 	}
 
 	newToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).SignedString([]byte(FileSecretKey))
@@ -117,7 +121,7 @@ func GenerateFileAccessKey(id string, permissions []string)(string, error) {
 	return newToken, nil
 }
 
-func ValidateAccessKey(accessKey string)(claims *FileClaims, valid bool){
+func ValidateAccessKey(accessKey string) (claims *FileClaims, valid bool) {
 	token, err := jwt.ParseWithClaims(
 		accessKey,
 		&FileClaims{},
@@ -152,7 +156,7 @@ func ValidatePermissions(accessKey, permission string) bool {
 		})
 
 	claims, _ := token.Claims.(*FileClaims)
-	if helper.StringArrayContains(claims.Permissions, permission){
+	if helper.StringArrayContains(claims.Permissions, permission) {
 		return true
 	}
 	return false
@@ -269,4 +273,3 @@ func Auth() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
