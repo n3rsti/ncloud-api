@@ -72,7 +72,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	// Convert ID to string
 	fileId := res.InsertedID.(primitive.ObjectID).Hex()
 
-	if err = c.SaveUploadedFile(file, UploadDestination+ directory + "/" + fileId); err != nil {
+	if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+fileId); err != nil {
 		// Remove file document if saving it wasn't successful
 		_, _ = collection.DeleteOne(c, bson.D{{"_id", res.InsertedID}})
 		log.Panic(err)
@@ -141,13 +141,13 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 		return
 	}
 
-
 	c.Status(http.StatusNoContent)
 }
 
 func (h *FileHandler) UpdateFile(c *gin.Context) {
 	// Bind request body to File model
 	var file models.File
+	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
 
 	if err := c.MustBindWith(&file, binding.JSON); err != nil {
 		return
@@ -198,6 +198,13 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 
 	}
 
+	if !file.ParentDirectory.IsZero() {
+		os.Rename(
+			UploadDestination+fileAccessKey.ParentDirectory+"/"+fileAccessKey.Id,
+			UploadDestination+file.ParentDirectory.Hex()+"/"+fileAccessKey.Id,
+		)
+	}
+
 	// Update file record
 	fileCollection := h.Db.Collection("files")
 	fileId := c.Param("id")
@@ -218,7 +225,7 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *FileHandler) GetFile(c *gin.Context){
+func (h *FileHandler) GetFile(c *gin.Context) {
 	// Don't need to validate access key, because it is verified in FileAuth
 	fileAccessKey := c.GetHeader("FileAccessKey")
 	claims, _ := auth.ValidateAccessKey(fileAccessKey)
