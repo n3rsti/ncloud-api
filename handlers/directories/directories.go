@@ -160,7 +160,9 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 	directoryId := c.Param("id")
 	dirAccessKey := c.GetHeader("DirectoryAccessKey")
+	newDirAccessKey := c.GetHeader("NewDirectoryAccessKey")
 	isAuthorized := auth.ValidatePermissions(dirAccessKey, auth.PermissionModify)
+	claims := auth.ExtractClaimsFromContext(c)
 
 	if isAuthorized == false {
 		c.IndentedJSON(http.StatusForbidden, gin.H{
@@ -183,12 +185,42 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 		return
 	}
 
-	claims, _ := auth.ValidateAccessKey(dirAccessKey)
-	if claims.Id == directory.ParentDirectory.Hex() {
+	accessKey, _ := auth.ValidateAccessKey(dirAccessKey)
+	if accessKey.Id == directory.ParentDirectory.Hex() {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
 			"error": "can't set same id and parent_directory_id",
 		})
 	}
+
+	if !directory.ParentDirectory.IsZero() && newDirAccessKey != "" {
+		if _, validAccessKey := auth.ValidateAccessKey(newDirAccessKey); validAccessKey == false {
+			c.IndentedJSON(http.StatusForbidden, gin.H{
+				"error": "invalid new directory access key",
+			})
+			return
+		}
+	} else if !directory.ParentDirectory.IsZero() && newDirAccessKey == "" {
+		// If user don't provide new directory access key, we perform database check for directory ownership
+		var result bson.M
+
+		directoryCollection := h.Db.Collection("directories")
+		err := directoryCollection.FindOne(c, bson.D{{"_id", directory.ParentDirectory}}).Decode(&result)
+		if err != nil {
+			c.IndentedJSON(http.StatusBadRequest, gin.H{
+				"error": "new parent directory not found",
+			})
+
+			return
+		}
+
+		if result["user"] != claims.Id {
+			c.IndentedJSON(http.StatusForbidden, gin.H{
+				"error": "no access to new parent directory",
+			})
+			return
+		}
+	}
+
 
 	collection := h.Db.Collection("directories")
 
@@ -196,6 +228,7 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 
 	_, err := collection.UpdateByID(c, directoryObjectId, bson.D{{"$set", directory.ToBsonNotEmpty()}})
 	if err != nil {
+		fmt.Println(err)
 		c.IndentedJSON(http.StatusNotFound, gin.H{
 			"error": "couldn't find directory",
 		})
