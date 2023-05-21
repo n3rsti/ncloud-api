@@ -22,31 +22,25 @@ type DirectoryHandler struct {
 
 func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 	directoryId := c.Param("id")
-	reqUser := auth.ExtractClaimsFromContext(c)
+	claims := auth.ExtractClaimsFromContext(c)
 
-	var matchStage bson.D
-
-	if directoryId == "" {
-		matchStage = bson.D{
-			{"$match", bson.D{
-				{"parent_directory", nil},
-				{"user", reqUser.Id},
-			}},
-		}
-	} else {
-		directoryObjectId, err := primitive.ObjectIDFromHex(directoryId)
-		if err != nil {
-			c.Status(http.StatusBadRequest)
-			return
-		}
-
-		matchStage = bson.D{
-			{"$match", bson.D{
-				{"_id", directoryObjectId},
-			}},
-		}
+	// Attempt to convert url ID parameter to ObjectID
+	// If it fails, it means that parameter is not valid
+	directoryObjectId, err := primitive.ObjectIDFromHex(directoryId)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": "invalid ID",
+		})
+		return
 	}
 
+	matchStage := bson.D{
+		{"$match", bson.D{
+			{"_id", directoryObjectId},
+		}},
+	}
+
+	// Join files
 	lookupStage := bson.D{{"$lookup", bson.D{
 		{"from", "files"},
 		{"localField", "_id"},
@@ -54,6 +48,7 @@ func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 		{"as", "files"},
 	}}}
 
+	// Join directories
 	lookupStage2 := bson.D{{"$lookup", bson.D{
 		{"from", "directories"},
 		{"localField", "_id"},
@@ -72,7 +67,7 @@ func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 	// map results to bson.M
 	var results []bson.M
 	if err = cursor.All(c, &results); err != nil {
-		log.Print(err)
+		log.Println(err)
 	}
 
 	if len(results) == 0 {
@@ -82,7 +77,7 @@ func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 
 	directoryOwner := results[0]["user"]
 
-	if directoryOwner == "" || directoryOwner != reqUser.Id {
+	if directoryOwner == "" || directoryOwner != claims.Id {
 		c.Status(http.StatusForbidden)
 		return
 	}
@@ -93,21 +88,23 @@ func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 	parentDirectoryId := c.Param("id")
 
-	var data models.Directory
-
-	if err := c.BindJSON(&data); err != nil {
+	// Attempt to bind JSON directory to Directory model
+	var directory models.Directory
+	if err := c.BindJSON(&directory); err != nil {
 		return
 	}
 
+	// Attempt to convert url ID parameter to ObjectID
+	// If it fails, it means ID is not valid
 	hexId, err := primitive.ObjectIDFromHex(parentDirectoryId)
 	if err != nil {
 		return
 	}
 
 	// Set parentDirectoryId from URL
-	data.ParentDirectory = hexId
+	directory.ParentDirectory = hexId
 
-	if data.Name == "" {
+	if directory.Name == "" {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
 			"error": "empty name or parent directory",
 		})
@@ -116,54 +113,58 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 
 	user := auth.ExtractClaimsFromContext(c)
 
-	data.User = user.Id
+	directory.User = user.Id
 
 	collection := h.Db.Collection("directories")
 
 	// Check if user is the owner of the directory where he wants to create directory
-	var result bson.M
+	var dbResult bson.M
 
-	if err = collection.FindOne(c, bson.D{{"_id", hexId}}).Decode(&result); err != nil {
+	if err = collection.FindOne(c, bson.D{{"_id", hexId}}).Decode(&dbResult); err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
 
-	if result["user"] != user.Id {
+	if dbResult["user"] != user.Id {
 		c.Status(http.StatusForbidden)
 		return
 	}
 
-	res, err := collection.InsertOne(c, data.ToBSON())
-
+	res, err := collection.InsertOne(c, directory.ToBSON())
 	if err != nil {
 		fmt.Println(err)
 		c.Status(http.StatusBadRequest)
 	}
 
-	fileId := res.InsertedID.(primitive.ObjectID).Hex()
-	data.Id = fileId
+	// Get ID of created directory from mongodb insert query response
+	directoryId := res.InsertedID.(primitive.ObjectID).Hex()
+	directory.Id = directoryId
 
-	if err := os.Mkdir(files.UploadDestination+fileId, 0700); err != nil {
+	// Create directory on disk
+	if err := os.Mkdir(files.UploadDestination+directoryId, 0700); err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
 
 	// Create and set access key to directory
-	newDirectoryAccessKey, err := auth.GenerateFileAccessKey(fileId, auth.AllDirectoryPermissions)
-	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": newDirectoryAccessKey}}})
+	newDirectoryAccessKey, err := auth.GenerateFileAccessKey(directoryId, auth.AllDirectoryPermissions)
+	if _, err := collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": newDirectoryAccessKey}}}); err != nil {
+		log.Println(err)
+	}
 
-	data.AccessKey = newDirectoryAccessKey
+	directory.AccessKey = newDirectoryAccessKey
 
-	c.IndentedJSON(http.StatusCreated, data)
+	c.IndentedJSON(http.StatusCreated, directory)
 }
 
 func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 	directoryId := c.Param("id")
 	dirAccessKey := c.GetHeader("DirectoryAccessKey")
 	newDirAccessKey := c.GetHeader("NewDirectoryAccessKey")
-	isAuthorized := auth.ValidatePermissions(dirAccessKey, auth.PermissionModify)
 	claims := auth.ExtractClaimsFromContext(c)
 
+	// Validate permissions from access key
+	isAuthorized := auth.ValidatePermissions(dirAccessKey, auth.PermissionModify)
 	if isAuthorized == false {
 		c.IndentedJSON(http.StatusForbidden, gin.H{
 			"error": "no modify permission",
@@ -192,6 +193,8 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 		})
 	}
 
+	// Check if user wants to change parent directory (move directory) and if they provided access key
+	// If there's no access key, we perform database check for directory ownership
 	if !directory.ParentDirectory.IsZero() && newDirAccessKey != "" {
 		if _, validAccessKey := auth.ValidateAccessKey(newDirAccessKey); validAccessKey == false {
 			c.IndentedJSON(http.StatusForbidden, gin.H{
@@ -200,7 +203,7 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 			return
 		}
 	} else if !directory.ParentDirectory.IsZero() && newDirAccessKey == "" {
-		// If user don't provide new directory access key, we perform database check for directory ownership
+		// If user doesn't provide new directory access key, we perform database check for directory ownership
 		var result bson.M
 
 		directoryCollection := h.Db.Collection("directories")
@@ -220,7 +223,6 @@ func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
 			return
 		}
 	}
-
 
 	collection := h.Db.Collection("directories")
 
