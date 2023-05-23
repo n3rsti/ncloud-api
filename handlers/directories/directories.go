@@ -24,20 +24,31 @@ func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 	directoryId := c.Param("id")
 	claims := auth.ExtractClaimsFromContext(c)
 
-	// Attempt to convert url ID parameter to ObjectID
-	// If it fails, it means that parameter is not valid
-	directoryObjectId, err := primitive.ObjectIDFromHex(directoryId)
-	if err != nil {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
-			"error": "invalid ID",
-		})
-		return
-	}
+	var matchStage bson.D
 
-	matchStage := bson.D{
-		{"$match", bson.D{
-			{"_id", directoryObjectId},
-		}},
+	if directoryId == "" {
+		matchStage = bson.D{
+			{"$match", bson.D{
+				{"parent_directory", nil},
+				{"user", claims.Id},
+			}},
+		}
+	} else {
+		// Attempt to convert url ID parameter to ObjectID
+		// If it fails, it means that parameter is not valid
+		directoryObjectId, err := primitive.ObjectIDFromHex(directoryId)
+		if err != nil {
+			c.IndentedJSON(http.StatusBadRequest, gin.H{
+				"error": "invalid ID",
+			})
+			return
+		}
+
+		matchStage = bson.D{
+			{"$match", bson.D{
+				{"_id", directoryObjectId},
+			}},
+		}
 	}
 
 	// Join files
