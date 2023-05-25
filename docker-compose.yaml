@@ -19,6 +19,15 @@ services:
       - ME_CONFIG_MONGODB_ADMINUSERNAME=rootuser
       - ME_CONFIG_MONGODB_ADMINPASSWORD=rootpass
       - ME_CONFIG_MONGODB_SERVER=mongodb
+  meilisearch:
+      image: "getmeili/meilisearch"
+      restart: unless-stopped
+      ports:
+        - "127.0.0.1:7700:7700"
+      volumes:
+        - /var/local/meilisearch:/data.ms
+      env_file:
+        - /var/local/meilisearch/meilisearch.env
 
 volumes:
   data: { }

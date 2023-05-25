@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/meilisearch/meilisearch-go"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -18,6 +19,7 @@ import (
 
 type DirectoryHandler struct {
 	Db *mongo.Database
+	MeiliSearch *meilisearch.Client
 }
 
 func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {

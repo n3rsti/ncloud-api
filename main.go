@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/meilisearch/meilisearch-go"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
@@ -20,9 +22,40 @@ var DbHost string
 var DbPassword string
 var DbUser string
 var DbName string
+var MeiliApiKey string
 
 func health(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, map[string]string{"ok": "true"})
+}
+
+// Run if you need to sync meilisearch with primary database
+func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client){
+	opts := options.Find().SetProjection(bson.D{{"access_key", 0}})
+
+	// Add directories to meilisearch
+	cursor, err := db.Collection("directories").Find(context.TODO(), bson.D{}, opts)
+	var results []bson.M
+	if err = cursor.All(context.TODO(), &results); err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = meiliClient.Index("directories").AddDocuments(results)
+	if err != nil {
+		panic(err)
+	}
+
+	// Add files to meilisearch
+	cursor, err = db.Collection("files").Find(context.TODO(), bson.D{}, opts)
+	if err = cursor.All(context.TODO(), &results); err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = meiliClient.Index("files").AddDocuments(results)
+	if err != nil {
+		panic(err)
+	}
+
+
 }
 
 func main() {
@@ -31,6 +64,7 @@ func main() {
 	DbPassword = helper.GetEnv("DB_PASSWORD", "rootpass")
 	DbUser = helper.GetEnv("DB_USER", "rootuser")
 	DbName = helper.GetEnv("DB_NAME", "ncloud-api")
+	MeiliApiKey = helper.GetEnv("MEILI_MASTER_KEY", "meili_master_key")
 
 	client, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
 	if err != nil {
@@ -48,10 +82,16 @@ func main() {
 
 	db := client.Database(DbName)
 
+	// meilisearch setup
+	meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
+		Host:   "http://localhost:7700",
+		APIKey: MeiliApiKey,
+	})
+
 	// Handlers
 	userHandler := user.UserHandler{Db: db}
 	fileHandler := files.FileHandler{Db: db}
-	directoryHandler := directories.DirectoryHandler{Db: db}
+	directoryHandler := directories.DirectoryHandler{Db: db, MeiliSearch: meiliClient}
 
 	// Setup router
 	router := gin.Default()
