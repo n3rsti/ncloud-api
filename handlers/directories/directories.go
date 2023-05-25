@@ -371,3 +371,23 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+func (h *DirectoryHandler) FindDirectories (c *gin.Context) {
+	claims := auth.ExtractClaimsFromContext(c)
+	name := c.Query("name")
+
+
+	resp, err := h.MeiliSearch.Index("directories").Search(name, &meilisearch.SearchRequest{
+		Filter: [][]string{
+			{"user = " + claims.Id},
+		},
+	})
+
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, resp)
+}

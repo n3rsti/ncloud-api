@@ -30,6 +30,13 @@ func health(c *gin.Context) {
 
 // Run if you need to sync meilisearch with primary database
 func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client){
+	filterableAttributes := []string{
+		"name",
+		"_id",
+		"parent_directory",
+		"user",
+	}
+
 	opts := options.Find().SetProjection(bson.D{{"access_key", 0}})
 
 	// Add directories to meilisearch
@@ -53,6 +60,13 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client){
 	_, err = meiliClient.Index("files").AddDocuments(results)
 	if err != nil {
 		panic(err)
+	}
+
+	if _, err := meiliClient.Index("files").UpdateFilterableAttributes(&filterableAttributes); err != nil {
+		log.Println(err)
+	}
+	if _, err = meiliClient.Index("directories").UpdateFilterableAttributes(&filterableAttributes); err != nil {
+		log.Println(err)
 	}
 
 
@@ -128,6 +142,8 @@ func main() {
 		}
 
 	}
+
+	router.GET("/api/search/directories", directoryHandler.FindDirectories)
 
 	router.Run("localhost:8080")
 }
