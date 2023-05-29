@@ -29,7 +29,7 @@ func health(c *gin.Context) {
 }
 
 // Run if you need to sync meilisearch with primary database
-func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client){
+func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
 	filterableAttributes := []string{
 		"name",
 		"_id",
@@ -37,7 +37,14 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client){
 		"user",
 	}
 
-	opts := options.Find().SetProjection(bson.D{{"access_key", 0}})
+	searchableAttributes := []string{
+		"name",
+	}
+
+	opts := options.Find().SetProjection(bson.D{
+		{"_id", 1}, {"name", 1},
+		{"parent_directory", 1}, {"user", 1}},
+	)
 
 	// Add directories to meilisearch
 	cursor, err := db.Collection("directories").Find(context.TODO(), bson.D{}, opts)
@@ -69,6 +76,13 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client){
 		log.Println(err)
 	}
 
+	if _, err = meiliClient.Index("directories").UpdateSearchableAttributes(&searchableAttributes); err != nil {
+		log.Println(err)
+	}
+
+	if _, err = meiliClient.Index("files").UpdateSearchableAttributes(&searchableAttributes); err != nil {
+		log.Println(err)
+	}
 
 }
 
@@ -102,6 +116,8 @@ func main() {
 		APIKey: MeiliApiKey,
 	})
 
+	//initMeiliSearch(db, meiliClient)
+
 	// Handlers
 	userHandler := user.UserHandler{Db: db}
 	fileHandler := files.FileHandler{Db: db}
@@ -120,6 +136,7 @@ func main() {
 	authorized := router.Group("/")
 	authorized.Use(auth.Auth())
 	{
+		authorized.GET("/api/directories/search", directoryHandler.FindDirectories)
 
 		authorized.GET("/api/directories/", directoryHandler.GetDirectoryWithFiles)
 		authorized.GET("/api/directories/:id", directoryHandler.GetDirectoryWithFiles)
@@ -142,8 +159,6 @@ func main() {
 		}
 
 	}
-
-	router.GET("/api/search/directories", directoryHandler.FindDirectories)
 
 	router.Run("localhost:8080")
 }

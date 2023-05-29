@@ -375,13 +375,26 @@ func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
 func (h *DirectoryHandler) FindDirectories (c *gin.Context) {
 	claims := auth.ExtractClaimsFromContext(c)
 	name := c.Query("name")
+	parentDirectory := c.Query("parent_directory")
+
+	filter := [][]string{
+		{"user = '" + claims.Id + "'"},
+	}
+
+	if parentDirectory != "" {
+		filter = append(filter, []string{"parent_directory = '" + parentDirectory + "'"})
+	}
+
 
 
 	resp, err := h.MeiliSearch.Index("directories").Search(name, &meilisearch.SearchRequest{
-		Filter: [][]string{
-			{"user = " + claims.Id},
-		},
+		Filter: filter,
 	})
+
+	resp2, err := h.MeiliSearch.Index("files").Search(name, &meilisearch.SearchRequest{
+		Filter: filter,
+	})
+
 
 	if err != nil {
 		log.Println(err)
@@ -389,5 +402,13 @@ func (h *DirectoryHandler) FindDirectories (c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, resp)
+	type Response struct {
+		Directories []interface{}
+		Files []interface{}
+	}
+
+	c.IndentedJSON(http.StatusOK, &Response{
+		Directories: resp.Hits,
+		Files: resp2.Hits,
+	})
 }
