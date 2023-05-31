@@ -11,6 +11,7 @@ import (
 	"log"
 	"ncloud-api/handlers/directories"
 	"ncloud-api/handlers/files"
+	"ncloud-api/handlers/search"
 	"ncloud-api/handlers/user"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/utils/helper"
@@ -122,6 +123,7 @@ func main() {
 	userHandler := user.UserHandler{Db: db}
 	fileHandler := files.FileHandler{Db: db}
 	directoryHandler := directories.DirectoryHandler{Db: db, MeiliSearch: meiliClient}
+	searchHandler := search.Handler{Db: meiliClient}
 
 	// Setup router
 	router := gin.Default()
@@ -136,7 +138,7 @@ func main() {
 	authorized := router.Group("/")
 	authorized.Use(auth.Auth())
 	{
-		authorized.GET("/api/directories/search", directoryHandler.FindDirectories)
+		authorized.GET("/api/directories/search", searchHandler.FindDirectoriesAndFiles)
 
 		authorized.GET("/api/directories/", directoryHandler.GetDirectoryWithFiles)
 		authorized.GET("/api/directories/:id", directoryHandler.GetDirectoryWithFiles)
