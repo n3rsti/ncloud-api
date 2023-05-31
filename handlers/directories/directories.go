@@ -23,8 +23,21 @@ type Handler struct {
 	SearchDb *meilisearch.Client
 }
 
+type SearchDatabaseData struct {
+	Id        string `json:"_id"`
+	Name      string `json:"name,omitempty"`
+	Directory string `json:"parent_directory,omitempty"`
+	User      string `json:"user,omitempty"`
+}
+
 func (h *Handler) UpdateOrAddToSearchDatabase(document interface{}) {
 	if err := search.UpdateDocuments(h.SearchDb, "directories", &document); err != nil{
+		log.Println(err)
+	}
+}
+
+func (h *Handler) DeleteFromSearchDatabase(id []string) {
+	if err := search.DeleteDocuments(h.SearchDb, "directories", id); err != nil {
 		log.Println(err)
 	}
 }
@@ -174,6 +187,14 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 
 	directory.AccessKey = newDirectoryAccessKey
 
+	// Update search database
+	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
+		Id: directoryId,
+		Name: directory.Name,
+		Directory: parentDirectoryId,
+		User: user.Id,
+	})
+
 	c.IndentedJSON(http.StatusCreated, directory)
 }
 
@@ -255,6 +276,25 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 			"error": "couldn't find directory",
 		})
 	}
+
+	var parentDirectoryId string
+
+	if directory.ParentDirectory.IsZero(){
+		parentDirectoryId = ""
+	} else {
+		parentDirectoryId = directory.ParentDirectory.Hex()
+	}
+
+	fmt.Println(directoryId)
+	fmt.Println(directory.Name)
+
+	// Update search database
+	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
+		Id: directoryId,
+		Name: directory.Name,
+		Directory: parentDirectoryId,
+		User: claims.Id,
+	})
 
 	c.Status(http.StatusNoContent)
 
