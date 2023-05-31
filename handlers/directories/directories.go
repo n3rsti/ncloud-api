@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
 	"ncloud-api/handlers/files"
+	"ncloud-api/handlers/search"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"ncloud-api/utils/helper"
@@ -17,12 +18,16 @@ import (
 	"os"
 )
 
-type DirectoryHandler struct {
-	Db *mongo.Database
-	MeiliSearch *meilisearch.Client
+type Handler struct {
+	Db          *mongo.Database
+	SearchDb *meilisearch.Client
 }
 
-func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
+func (h *Handler) InsertToSearchDatabase(document *interface{}) error {
+	return search.InsertToSearchDatabase(h.SearchDb, "directories", document)
+}
+
+func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 	directoryId := c.Param("id")
 	claims := auth.ExtractClaimsFromContext(c)
 
@@ -98,7 +103,7 @@ func (h *DirectoryHandler) GetDirectoryWithFiles(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, results)
 }
 
-func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
+func (h *Handler) CreateDirectory(c *gin.Context) {
 	parentDirectoryId := c.Param("id")
 
 	// Attempt to bind JSON directory to Directory model
@@ -170,7 +175,7 @@ func (h *DirectoryHandler) CreateDirectory(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, directory)
 }
 
-func (h *DirectoryHandler) ModifyDirectory(c *gin.Context) {
+func (h *Handler) ModifyDirectory(c *gin.Context) {
 	directoryId := c.Param("id")
 	dirAccessKey := c.GetHeader("DirectoryAccessKey")
 	newDirAccessKey := c.GetHeader("NewDirectoryAccessKey")
@@ -292,7 +297,7 @@ func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentD
 
 }
 
-func (h *DirectoryHandler) DeleteDirectory(c *gin.Context) {
+func (h *Handler) DeleteDirectory(c *gin.Context) {
 	// Verify permissions from access key
 	directoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
 	if !helper.StringArrayContains(directoryAccessKey.Permissions, auth.PermissionDelete) {

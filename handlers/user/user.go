@@ -18,11 +18,11 @@ import (
 	"os"
 )
 
-type UserHandler struct {
+type Handler struct {
 	Db *mongo.Database
 }
 
-func (h *UserHandler) Register(c *gin.Context) {
+func (h *Handler) Register(c *gin.Context) {
 	var user models.User
 
 	if err := c.BindJSON(&user); err != nil {
@@ -100,7 +100,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, user)
 }
 
-func (h *UserHandler) Login(c *gin.Context) {
+func (h *Handler) Login(c *gin.Context) {
 	type LoginData struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -163,7 +163,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	return
 }
 
-func (h *UserHandler) RefreshToken(c *gin.Context) {
+func (h *Handler) RefreshToken(c *gin.Context) {
 	token := c.GetHeader("Authorization")
 
 	if len(token) < len("Bearer ") {
@@ -185,7 +185,7 @@ func (h *UserHandler) RefreshToken(c *gin.Context) {
 	})
 }
 
-func (h *UserHandler) getMainDirectoryAccessKey(c *gin.Context, userId string) (string, error) {
+func (h *Handler) getMainDirectoryAccessKey(c *gin.Context, userId string) (string, error) {
 	collection := h.Db.Collection("directories")
 
 	var result bson.M

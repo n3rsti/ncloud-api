@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/meilisearch/meilisearch-go"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
 	"mime/multipart"
+	"ncloud-api/handlers/search"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"net/http"
@@ -17,8 +19,13 @@ import (
 
 const UploadDestination = "/var/ncloud_upload/"
 
-type FileHandler struct {
+type Handler struct {
 	Db *mongo.Database
+	SearchDb *meilisearch.Client
+}
+
+func (h *Handler) InsertToSearchDatabase(document *interface{}) error {
+	return search.InsertToSearchDatabase(h.SearchDb, "directories", document)
 }
 
 func getFileContentType(file *multipart.FileHeader) (contentType string, err error) {
@@ -37,7 +44,7 @@ func getFileContentType(file *multipart.FileHeader) (contentType string, err err
 	return http.DetectContentType(buf), err
 }
 
-func (h *FileHandler) Upload(c *gin.Context) {
+func (h *Handler) Upload(c *gin.Context) {
 	file, _ := c.FormFile("file")
 	directory := c.Param("id")
 	claims := auth.ExtractClaimsFromContext(c)
@@ -113,7 +120,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 // # Deletes file from server storage and database
 //
 // To avoid confusion: user is already authenticated and authorized at this point from file_auth
-func (h *FileHandler) DeleteFile(c *gin.Context) {
+func (h *Handler) DeleteFile(c *gin.Context) {
 	fileId := c.Param("id")
 	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
 	parentDirectory := fileAccessKey.ParentDirectory
@@ -144,7 +151,7 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *FileHandler) UpdateFile(c *gin.Context) {
+func (h *Handler) UpdateFile(c *gin.Context) {
 	// Bind request body to File model
 	var file models.File
 	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
@@ -238,7 +245,7 @@ func (h *FileHandler) UpdateFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *FileHandler) GetFile(c *gin.Context) {
+func (h *Handler) GetFile(c *gin.Context) {
 	// Don't need to validate access key, because it is verified in FileAuth
 	fileAccessKey := c.GetHeader("FileAccessKey")
 	claims, _ := auth.ValidateAccessKey(fileAccessKey)

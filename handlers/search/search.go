@@ -52,3 +52,10 @@ func (h *Handler) FindDirectoriesAndFiles(c *gin.Context) {
 		Files: resp2.Hits,
 	})
 }
+
+func InsertToSearchDatabase(db *meilisearch.Client, index string, document *interface{}) error{
+	if _, err := db.Index(index).AddDocuments(document); err != nil {
+		return err
+	}
+	return nil
+}
