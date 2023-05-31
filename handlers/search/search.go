@@ -25,8 +25,6 @@ func (h *Handler) FindDirectoriesAndFiles(c *gin.Context) {
 		filter = append(filter, []string{"parent_directory = '" + parentDirectory + "'"})
 	}
 
-
-
 	resp, err := h.Db.Index("directories").Search(name, &meilisearch.SearchRequest{
 		Filter: filter,
 	})
@@ -34,7 +32,6 @@ func (h *Handler) FindDirectoriesAndFiles(c *gin.Context) {
 	resp2, err := h.Db.Index("files").Search(name, &meilisearch.SearchRequest{
 		Filter: filter,
 	})
-
 
 	if err != nil {
 		log.Println(err)
@@ -44,17 +41,23 @@ func (h *Handler) FindDirectoriesAndFiles(c *gin.Context) {
 
 	type Response struct {
 		Directories []interface{}
-		Files []interface{}
+		Files       []interface{}
 	}
 
 	c.IndentedJSON(http.StatusOK, &Response{
 		Directories: resp.Hits,
-		Files: resp2.Hits,
+		Files:       resp2.Hits,
 	})
 }
 
-func InsertToSearchDatabase(db *meilisearch.Client, index string, document *interface{}) error{
-	if _, err := db.Index(index).AddDocuments(document); err != nil {
+func UpdateDocuments(db *meilisearch.Client, index string, document interface{}) error {
+	if _, err := db.Index(index).UpdateDocuments(document); err != nil {
+		return err
+	}
+	return nil
+}
+func DeleteDocuments(db *meilisearch.Client, index string, id []string) error {
+	if _, err := db.Index(index).DeleteDocuments(id); err != nil {
 		return err
 	}
 	return nil

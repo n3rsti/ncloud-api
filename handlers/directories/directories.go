@@ -23,8 +23,10 @@ type Handler struct {
 	SearchDb *meilisearch.Client
 }
 
-func (h *Handler) InsertToSearchDatabase(document *interface{}) error {
-	return search.InsertToSearchDatabase(h.SearchDb, "directories", document)
+func (h *Handler) UpdateOrAddToSearchDatabase(document interface{}) {
+	if err := search.UpdateDocuments(h.SearchDb, "directories", &document); err != nil{
+		log.Println(err)
+	}
 }
 
 func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {

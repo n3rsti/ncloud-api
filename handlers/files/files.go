@@ -20,12 +20,27 @@ import (
 const UploadDestination = "/var/ncloud_upload/"
 
 type Handler struct {
-	Db *mongo.Database
+	Db       *mongo.Database
 	SearchDb *meilisearch.Client
 }
 
-func (h *Handler) InsertToSearchDatabase(document *interface{}) error {
-	return search.InsertToSearchDatabase(h.SearchDb, "directories", document)
+type SearchDatabaseData struct {
+	Id        string `json:"_id"`
+	Name      string `json:"name,omitempty"`
+	Directory string `json:"parent_directory,omitempty"`
+	User      string `json:"user,omitempty"`
+}
+
+func (h *Handler) UpdateOrAddToSearchDatabase(document interface{}) {
+	if err := search.UpdateDocuments(h.SearchDb, "files", document); err != nil {
+		log.Println(err)
+	}
+}
+
+func (h *Handler) DeleteFromSearchDatabase(id []string) {
+	if err := search.DeleteDocuments(h.SearchDb, "files", id); err != nil {
+		log.Println(err)
+	}
 }
 
 func getFileContentType(file *multipart.FileHeader) (contentType string, err error) {
@@ -90,7 +105,9 @@ func (h *Handler) Upload(c *gin.Context) {
 	// No need to verify directory, because it is verified by parsing it to primitive.ObjectID (parentDirObjectId)
 	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
 
-	collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}})
+	if _, err = collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}}); err != nil {
+		log.Println(err)
+	}
 
 	type FileResponse struct {
 		Id        string `json:"id"`
@@ -100,6 +117,14 @@ func (h *Handler) Upload(c *gin.Context) {
 		Type      string `json:"type"`
 		Size      int64  `json:"size"`
 	}
+
+	// Update search database
+	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
+		Id:        fileId,
+		Name:      file.Filename,
+		Directory: directory,
+		User:      claims.Id,
+	})
 
 	filesResponse := []FileResponse{
 		{
@@ -143,15 +168,14 @@ func (h *Handler) DeleteFile(c *gin.Context) {
 
 	_, err = collection.DeleteOne(c, bson.D{{"_id", hexFileId}})
 
-	if err != nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
+	// Update search database
+	h.DeleteFromSearchDatabase([]string{fileId})
 
 	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) UpdateFile(c *gin.Context) {
+	claims := auth.ExtractClaimsFromContext(c)
 	// Bind request body to File model
 	var file models.File
 	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
@@ -193,8 +217,6 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 
 			return
 		}
-
-		claims := auth.ExtractClaimsFromContext(c)
 
 		if result["user"] != claims.Id {
 			c.IndentedJSON(http.StatusForbidden, gin.H{
@@ -241,6 +263,21 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
+
+	// Update search database
+	var parentDirectory string
+	if file.ParentDirectory.IsZero() {
+		parentDirectory = ""
+	} else {
+		parentDirectory = file.ParentDirectory.Hex()
+	}
+
+	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
+		Id:        fileId,
+		Name:      file.Name,
+		Directory: parentDirectory,
+		User:      claims.Id,
+	})
 
 	c.Status(http.StatusNoContent)
 }
