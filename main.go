@@ -14,6 +14,7 @@ import (
 	"ncloud-api/handlers/search"
 	"ncloud-api/handlers/user"
 	"ncloud-api/middleware/auth"
+	"ncloud-api/middleware/cors"
 	"ncloud-api/utils/helper"
 	"net/http"
 	"time"
@@ -128,6 +129,8 @@ func main() {
 	// Setup router
 	router := gin.Default()
 
+	router.Use(cors.Middleware())
+
 	router.GET("/api/health", health)
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)
@@ -140,7 +143,7 @@ func main() {
 	{
 		authorized.GET("/api/directories/search", searchHandler.FindDirectoriesAndFiles)
 
-		authorized.GET("/api/directories/", directoryHandler.GetDirectoryWithFiles)
+		authorized.GET("/api/directories", directoryHandler.GetDirectoryWithFiles)
 		authorized.GET("/api/directories/:id", directoryHandler.GetDirectoryWithFiles)
 
 		directoryGroup := authorized.Group("/api/")
