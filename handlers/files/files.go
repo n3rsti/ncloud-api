@@ -29,6 +29,7 @@ type SearchDatabaseData struct {
 	Name      string `json:"name,omitempty"`
 	Directory string `json:"parent_directory,omitempty"`
 	User      string `json:"user,omitempty"`
+	Type      string `json:"type,omitempty"`
 }
 
 func (h *Handler) UpdateOrAddToSearchDatabase(document interface{}) {
@@ -82,7 +83,6 @@ func (h *Handler) Upload(c *gin.Context) {
 		Size:            file.Size,
 	}
 
-
 	if err := newFile.Validate(); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err,
@@ -130,6 +130,7 @@ func (h *Handler) Upload(c *gin.Context) {
 		Name:      file.Filename,
 		Directory: directory,
 		User:      claims.Id,
+		Type:      fileContentType,
 	})
 
 	filesResponse := []FileResponse{

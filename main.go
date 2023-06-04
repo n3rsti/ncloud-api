@@ -61,6 +61,11 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
 	}
 
 	// Add files to meilisearch
+	opts = options.Find().SetProjection(bson.D{
+		{"_id", 1}, {"name", 1},
+		{"parent_directory", 1}, {"user", 1}, {"type", 1}},
+	)
+
 	cursor, err = db.Collection("files").Find(context.TODO(), bson.D{}, opts)
 	if err = cursor.All(context.TODO(), &results); err != nil {
 		log.Fatal(err)
