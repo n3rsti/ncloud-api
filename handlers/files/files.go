@@ -82,13 +82,20 @@ func (h *Handler) Upload(c *gin.Context) {
 		Size:            file.Size,
 	}
 
+
+	if err := newFile.Validate(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": err,
+		})
+		return
+	}
+
 	collection := h.Db.Collection("files")
 
 	res, err := collection.InsertOne(c, newFile.ToBSON())
 
 	if err != nil {
 		log.Panic(err)
-		return
 	}
 
 	// Convert ID to string
@@ -98,7 +105,6 @@ func (h *Handler) Upload(c *gin.Context) {
 		// Remove file document if saving it wasn't successful
 		_, _ = collection.DeleteOne(c, bson.D{{"_id", res.InsertedID}})
 		log.Panic(err)
-		return
 	}
 
 	permissions := auth.AllFilePermissions
@@ -106,7 +112,7 @@ func (h *Handler) Upload(c *gin.Context) {
 	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
 
 	if _, err = collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}}); err != nil {
-		log.Println(err)
+		log.Panic(err)
 	}
 
 	type FileResponse struct {
@@ -181,6 +187,16 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
 
 	if err := c.MustBindWith(&file, binding.JSON); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": "bad format",
+		})
+		return
+	}
+
+	if err := file.Validate(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": err,
+		})
 		return
 	}
 
@@ -233,7 +249,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 			UploadDestination+fileAccessKey.ParentDirectory+"/"+fileAccessKey.Id,
 			UploadDestination+file.ParentDirectory.Hex()+"/"+fileAccessKey.Id,
 		); err != nil {
-			log.Print(err)
+			log.Panic(err)
 		}
 
 		// Update access key: copy previous access key, but replace parentDirectory with a new one

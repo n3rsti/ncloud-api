@@ -95,12 +95,14 @@ func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 
 	if err != nil {
 		log.Println(err)
+		c.Status(http.StatusNotFound)
+		return
 	}
 
 	// map results to bson.M
 	var results []bson.M
 	if err = cursor.All(c, &results); err != nil {
-		log.Println(err)
+		log.Panic(err)
 	}
 
 	if len(results) == 0 {
@@ -124,6 +126,15 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	// Attempt to bind JSON directory to Directory model
 	var directory models.Directory
 	if err := c.BindJSON(&directory); err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	// Check if object matches requirements
+	if err := directory.Validate(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": err,
+		})
 		return
 	}
 
@@ -131,6 +142,9 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	// If it fails, it means ID is not valid
 	hexId, err := primitive.ObjectIDFromHex(parentDirectoryId)
 	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": "invalid ID format",
+		})
 		return
 	}
 
@@ -167,6 +181,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	if err != nil {
 		fmt.Println(err)
 		c.Status(http.StatusBadRequest)
+		return
 	}
 
 	// Get ID of created directory from mongodb insert query response
@@ -175,14 +190,13 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 
 	// Create directory on disk
 	if err := os.Mkdir(files.UploadDestination+directoryId, 0700); err != nil {
-		c.Status(http.StatusInternalServerError)
-		return
+		log.Panic(err)
 	}
 
 	// Create and set access key to directory
 	newDirectoryAccessKey, err := auth.GenerateFileAccessKey(directoryId, auth.AllDirectoryPermissions)
 	if _, err := collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": newDirectoryAccessKey}}}); err != nil {
-		log.Println(err)
+		log.Panic(err)
 	}
 
 	directory.AccessKey = newDirectoryAccessKey
@@ -210,6 +224,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 		c.IndentedJSON(http.StatusForbidden, gin.H{
 			"error": "no modify permission",
 		})
+		return
 	}
 
 	var directory models.Directory
@@ -218,6 +233,15 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
 			"error": "couldn't bind json data to object",
 		})
+		return
+	}
+
+	// Check if object matches requirements
+	if err := directory.Validate(); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{
+			"error": err,
+		})
+		return
 	}
 
 	if directory.User != "" || directory.Id != "" || directory.AccessKey != "" {
@@ -232,6 +256,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
 			"error": "can't set same id and parent_directory_id",
 		})
+		return
 	}
 
 	// Check if user wants to change parent directory (move directory) and if they provided access key
@@ -272,9 +297,8 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 	_, err := collection.UpdateByID(c, directoryObjectId, bson.D{{"$set", directory.ToBsonNotEmpty()}})
 	if err != nil {
 		fmt.Println(err)
-		c.IndentedJSON(http.StatusNotFound, gin.H{
-			"error": "couldn't find directory",
-		})
+		c.Status(http.StatusNotFound)
+		return
 	}
 
 	var parentDirectoryId string
@@ -285,8 +309,6 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 		parentDirectoryId = directory.ParentDirectory.Hex()
 	}
 
-	fmt.Println(directoryId)
-	fmt.Println(directory.Name)
 
 	// Update search database
 	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
@@ -297,7 +319,6 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 	})
 
 	c.Status(http.StatusNoContent)
-
 	return
 
 }
@@ -359,12 +380,12 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 	// everything except trash, main directory and potential future directories that can't be deleted anyway
 	cursor, err := collection.Find(context.TODO(), bson.D{{"user", user}, {"parent_directory", bson.D{{"$exists", true}}}})
 	if err != nil {
-		log.Println(err)
+		log.Panic(err)
 	}
 
 	var results []bson.M
 	if err = cursor.All(context.TODO(), &results); err != nil {
-		log.Println(err)
+		log.Panic(err)
 	}
 
 	/*
@@ -398,7 +419,7 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 
 	_, err = collection.DeleteMany(context.TODO(), bson.D{{"parent_directory", bson.D{{"$in", directoryList}}}})
 	if err != nil {
-		log.Println(err)
+		log.Panic(err)
 	}
 
 	// Remove all directories documents from DB
@@ -406,13 +427,13 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 
 	_, err = collection.DeleteMany(context.TODO(), bson.D{{"_id", bson.D{{"$in", directoryList}}}})
 	if err != nil {
-		log.Println(err)
+		log.Panic(err)
 	}
 
 	// Remove all directories (with files) from disk
 	for _, directory := range directoryList {
 		if err = os.RemoveAll(files.UploadDestination + directory.Hex()); err != nil {
-			log.Println(err)
+			log.Panic(err)
 		}
 	}
 
