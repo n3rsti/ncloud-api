@@ -1,13 +1,14 @@
 package models
 
 import (
+	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type File struct {
 	Id                      string             `json:"id"`
-	Name                    string             `json:"name"`
+	Name                    string             `json:"name" validate:"max=260"`
 	ParentDirectory         primitive.ObjectID `json:"parent_directory,omitempty"`
 	PreviousParentDirectory primitive.ObjectID `json:"previous_parent_directory,omitempty"`
 	User                    string             `json:"user"`
@@ -56,4 +57,11 @@ func (f *File) ToBSONnotEmpty() bson.D {
 	}
 
 	return data
+}
+func (f *File) Validate() error {
+	validate := validator.New()
+	if err := validate.Struct(f); err != nil {
+		return err
+	}
+	return nil
 }
