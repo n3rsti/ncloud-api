@@ -97,7 +97,7 @@ func (h *Handler) Register(c *gin.Context) {
 	// Remove password so it won't be included in response
 	user.Password = ""
 
-	c.IndentedJSON(http.StatusCreated, user)
+	c.JSON(http.StatusCreated, user)
 }
 
 func (h *Handler) Login(c *gin.Context) {
@@ -153,7 +153,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	trashAccessKey := result["trash_access_key"].(string)
 
-	c.IndentedJSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"username":      loginData.Username,
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
@@ -180,7 +180,7 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
 	})
 }

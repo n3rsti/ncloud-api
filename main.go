@@ -27,7 +27,7 @@ var DbName string
 var MeiliApiKey string
 
 func health(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, map[string]string{"ok": "true"})
+	c.JSON(http.StatusOK, map[string]string{"ok": "true"})
 }
 
 // Run if you need to sync meilisearch with primary database

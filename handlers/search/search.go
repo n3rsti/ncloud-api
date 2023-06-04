@@ -44,7 +44,7 @@ func (h *Handler) FindDirectoriesAndFiles(c *gin.Context) {
 		Files       []interface{}
 	}
 
-	c.IndentedJSON(http.StatusOK, &Response{
+	c.JSON(http.StatusOK, &Response{
 		Directories: resp.Hits,
 		Files:       resp2.Hits,
 	})

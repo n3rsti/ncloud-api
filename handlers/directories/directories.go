@@ -60,7 +60,7 @@ func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 		// If it fails, it means that parameter is not valid
 		directoryObjectId, err := primitive.ObjectIDFromHex(directoryId)
 		if err != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{
+			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "invalid ID",
 			})
 			return
@@ -117,7 +117,7 @@ func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, results)
+	c.JSON(http.StatusOK, results)
 }
 
 func (h *Handler) CreateDirectory(c *gin.Context) {
@@ -132,7 +132,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 
 	// Check if object matches requirements
 	if err := directory.Validate(); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err,
 		})
 		return
@@ -142,7 +142,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	// If it fails, it means ID is not valid
 	hexId, err := primitive.ObjectIDFromHex(parentDirectoryId)
 	if err != nil {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid ID format",
 		})
 		return
@@ -152,7 +152,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	directory.ParentDirectory = hexId
 
 	if directory.Name == "" {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "empty name or parent directory",
 		})
 		return
@@ -209,7 +209,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 		User: user.Id,
 	})
 
-	c.IndentedJSON(http.StatusCreated, directory)
+	c.JSON(http.StatusCreated, directory)
 }
 
 func (h *Handler) ModifyDirectory(c *gin.Context) {
@@ -221,7 +221,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 	// Validate permissions from access key
 	isAuthorized := auth.ValidatePermissions(dirAccessKey, auth.PermissionModify)
 	if isAuthorized == false {
-		c.IndentedJSON(http.StatusForbidden, gin.H{
+		c.JSON(http.StatusForbidden, gin.H{
 			"error": "no modify permission",
 		})
 		return
@@ -230,7 +230,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 	var directory models.Directory
 
 	if err := c.ShouldBindJSON(&directory); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "couldn't bind json data to object",
 		})
 		return
@@ -238,14 +238,14 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 
 	// Check if object matches requirements
 	if err := directory.Validate(); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err,
 		})
 		return
 	}
 
 	if directory.User != "" || directory.Id != "" || directory.AccessKey != "" {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "attempt to modify restricted fields",
 		})
 		return
@@ -253,7 +253,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 
 	accessKey, _ := auth.ValidateAccessKey(dirAccessKey)
 	if accessKey.Id == directory.ParentDirectory.Hex() {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "can't set same id and parent_directory_id",
 		})
 		return
@@ -263,7 +263,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 	// If there's no access key, we perform database check for directory ownership
 	if !directory.ParentDirectory.IsZero() && newDirAccessKey != "" {
 		if _, validAccessKey := auth.ValidateAccessKey(newDirAccessKey); validAccessKey == false {
-			c.IndentedJSON(http.StatusForbidden, gin.H{
+			c.JSON(http.StatusForbidden, gin.H{
 				"error": "invalid new directory access key",
 			})
 			return
@@ -275,7 +275,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 		directoryCollection := h.Db.Collection("directories")
 		err := directoryCollection.FindOne(c, bson.D{{"_id", directory.ParentDirectory}}).Decode(&result)
 		if err != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{
+			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "new parent directory not found",
 			})
 
@@ -283,7 +283,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 		}
 
 		if result["user"] != claims.Id {
-			c.IndentedJSON(http.StatusForbidden, gin.H{
+			c.JSON(http.StatusForbidden, gin.H{
 				"error": "no access to new parent directory",
 			})
 			return
@@ -364,7 +364,7 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 	// Verify permissions from access key
 	directoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
 	if !helper.StringArrayContains(directoryAccessKey.Permissions, auth.PermissionDelete) {
-		c.IndentedJSON(http.StatusForbidden, gin.H{
+		c.JSON(http.StatusForbidden, gin.H{
 			"error": "no permission to delete this directory",
 		})
 		return

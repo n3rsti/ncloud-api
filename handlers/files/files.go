@@ -84,7 +84,7 @@ func (h *Handler) Upload(c *gin.Context) {
 
 
 	if err := newFile.Validate(); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err,
 		})
 		return
@@ -143,7 +143,7 @@ func (h *Handler) Upload(c *gin.Context) {
 		},
 	}
 
-	c.IndentedJSON(http.StatusCreated, filesResponse)
+	c.JSON(http.StatusCreated, filesResponse)
 }
 
 // DeleteFile
@@ -187,14 +187,14 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
 
 	if err := c.MustBindWith(&file, binding.JSON); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "bad format",
 		})
 		return
 	}
 
 	if err := file.Validate(); err != nil {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err,
 		})
 		return
@@ -202,7 +202,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 
 	// These values can't be modified
 	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" || file.AccessKey != "" {
-		c.IndentedJSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "attempt to modify restricted fields",
 		})
 		return
@@ -215,7 +215,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		_, validAccessKey := auth.ValidateAccessKey(parentDirectoryAccessKey)
 
 		if validAccessKey == false {
-			c.IndentedJSON(http.StatusForbidden, gin.H{
+			c.JSON(http.StatusForbidden, gin.H{
 				"error": "invalid directory access key",
 			})
 			return
@@ -227,7 +227,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		directoryCollection := h.Db.Collection("directories")
 		err := directoryCollection.FindOne(c, bson.D{{"_id", file.ParentDirectory}}).Decode(&result)
 		if err != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{
+			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "new parent directory not found",
 			})
 
@@ -235,7 +235,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		}
 
 		if result["user"] != claims.Id {
-			c.IndentedJSON(http.StatusForbidden, gin.H{
+			c.JSON(http.StatusForbidden, gin.H{
 				"error": "no access to new parent directory",
 			})
 			return

@@ -263,7 +263,7 @@ func Auth() gin.HandlerFunc {
 		token := c.GetHeader("Authorization")
 
 		if !strings.HasPrefix(token, "Bearer ") {
-			c.IndentedJSON(http.StatusUnauthorized, gin.H{
+			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "no access token",
 			})
 			c.Header("WWW-Authenticate", "invalid access token")
@@ -276,7 +276,7 @@ func Auth() gin.HandlerFunc {
 		claims, err := ValidateToken(token)
 
 		if err != nil {
-			c.IndentedJSON(http.StatusUnauthorized, gin.H{
+			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid access token",
 			})
 			c.Header("WWW-Authenticate", "invalid access token")
@@ -285,7 +285,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		if claims.Token == "refresh" {
-			c.IndentedJSON(http.StatusUnauthorized, gin.H{
+			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "provided token is refresh token (should be access token)",
 			})
 			c.Header("WWW-Authenticate", "provided token is refresh token (should be access token)")
