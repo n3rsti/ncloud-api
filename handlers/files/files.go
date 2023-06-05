@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"mime/multipart"
 	"ncloud-api/handlers/search"
@@ -61,7 +62,33 @@ func getFileContentType(file *multipart.FileHeader) (contentType string, err err
 }
 
 func (h *Handler) Upload(c *gin.Context) {
-	file, _ := c.FormFile("file")
+	form, _ := c.MultipartForm()
+
+	fmt.Println(form.File["upload[]"])
+	files := form.File["upload[]"]
+
+	if len(files) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "no files",
+		})
+	}
+
+	// These 2 arrays below are separate because:
+	// 1) collection.InsertMany() argument type must be []interface{} and it doesn't work with neither []bson.D nor []models.File,
+	//		so fileObjects: []interface{} is used
+	// 2) files must be updated with ID and access key after InsertMany operation, and we can't update []interface{} with a new field and value
+	//		so filesToReturn: []models.File is used
+	//
+	// TODO: fix if you find a better solution, because we are using 2 arrays = 2x space
+	// (though it might not be a problem since no one will upload million files at once (probably :-D ))
+
+	// Array of files in format for database insert
+	fileObjects := make([]interface{}, 0, len(files))
+
+	// Array of files to return. They need to be updated after DB insert with access key and ID ...
+	// ... because they must be included in endpoint response
+	filesToReturn := make([]models.File, 0, len(files))
+
 	directory := c.Param("id")
 	claims := auth.ExtractClaimsFromContext(c)
 
@@ -73,78 +100,75 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
-	fileContentType, err := getFileContentType(file)
+	// Create array of files based on form data
+	for _, file := range files {
+		fileContentType, _ := getFileContentType(file)
 
-	newFile := models.File{
-		Name:            file.Filename,
-		ParentDirectory: parentDirObjectId,
-		User:            claims.Id,
-		Type:            fileContentType,
-		Size:            file.Size,
-	}
+		newFile := models.File{
+			Name:            file.Filename,
+			ParentDirectory: parentDirObjectId,
+			User:            claims.Id,
+			Type:            fileContentType,
+			Size:            file.Size,
+		}
 
-	if err := newFile.Validate(); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err,
-		})
-		return
+		filesToReturn = append(filesToReturn, newFile)
+		fileObjects = append(fileObjects, newFile.ToBSON())
+
+		if err := newFile.Validate(); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err,
+			})
+			return
+		}
 	}
 
 	collection := h.Db.Collection("files")
 
-	res, err := collection.InsertOne(c, newFile.ToBSON())
+	opts := options.InsertMany().SetOrdered(true)
+
+	res, err := collection.InsertMany(c, fileObjects, opts)
 
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// Convert ID to string
-	fileId := res.InsertedID.(primitive.ObjectID).Hex()
+	// Create and update access keys for each file
+	// Update filesToReturn with created ID and access key
+	for index, file := range files {
+		// Convert ID to string
+		fileId := res.InsertedIDs[index].(primitive.ObjectID).Hex()
 
-	if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+fileId); err != nil {
-		// Remove file document if saving it wasn't successful
-		_, _ = collection.DeleteOne(c, bson.D{{"_id", res.InsertedID}})
-		log.Panic(err)
-	}
+		if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+fileId); err != nil {
+			// Remove file document if saving it wasn't successful
+			_, _ = collection.DeleteOne(c, bson.D{{"_id", res.InsertedIDs[index]}})
+			log.Panic(err)
+		}
 
-	permissions := auth.AllFilePermissions
-	// No need to verify directory, because it is verified by parsing it to primitive.ObjectID (parentDirObjectId)
-	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
+		permissions := auth.AllFilePermissions
+		// No need to verify directory, because it is verified by parsing it to primitive.ObjectID (parentDirObjectId)
+		fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
 
-	if _, err = collection.UpdateByID(c, res.InsertedID, bson.D{{"$set", bson.M{"access_key": fileAccessKey}}}); err != nil {
-		log.Panic(err)
-	}
+		filesToReturn[index].AccessKey = fileAccessKey
+		filesToReturn[index].Id = res.InsertedIDs[index].(primitive.ObjectID).Hex()
 
-	type FileResponse struct {
-		Id        string `json:"id"`
-		Name      string `json:"name"`
-		AccessKey string `json:"access_key"`
-		Directory string `json:"parent_directory"`
-		Type      string `json:"type"`
-		Size      int64  `json:"size"`
-	}
+		if _, err = collection.UpdateByID(c, res.InsertedIDs[index], bson.D{{"$set", bson.M{"access_key": fileAccessKey}}}); err != nil {
+			log.Panic(err)
+		}
 
-	// Update search database
-	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
-		Id:        fileId,
-		Name:      file.Filename,
-		Directory: directory,
-		User:      claims.Id,
-		Type:      fileContentType,
-	})
+		fileContentType, _ := getFileContentType(file)
 
-	filesResponse := []FileResponse{
-		{
+		// Update search database
+		h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
 			Id:        fileId,
 			Name:      file.Filename,
-			AccessKey: fileAccessKey,
 			Directory: directory,
+			User:      claims.Id,
 			Type:      fileContentType,
-			Size:      file.Size,
-		},
+		})
 	}
 
-	c.JSON(http.StatusCreated, filesResponse)
+	c.JSON(http.StatusCreated, filesToReturn)
 }
 
 // DeleteFile

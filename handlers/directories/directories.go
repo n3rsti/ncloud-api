@@ -399,8 +399,7 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 	for _, result := range results {
 		resId := result["parent_directory"].(primitive.ObjectID)
 
-		value, ok := dict[resId]
-		if ok {
+		if value, ok := dict[resId]; ok {
 			dict[resId] = append(value, result["_id"].(primitive.ObjectID))
 		} else {
 			dict[resId] = []primitive.ObjectID{result["_id"].(primitive.ObjectID)}
