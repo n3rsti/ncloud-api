@@ -19,12 +19,12 @@ type File struct {
 
 func (f *File) ToBSON() bson.D {
 	return bson.D{
-		{"name", f.Name},
-		{"user", f.User},
-		{"parent_directory", f.ParentDirectory},
-		{"type", f.Type},
-		{"size", f.Size},
-		{"access_key", f.AccessKey},
+		{Key: "name", Value: f.Name},
+		{Key: "user", Value: f.User},
+		{Key: "parent_directory", Value: f.ParentDirectory},
+		{Key: "type", Value: f.Type},
+		{Key: "size", Value: f.Size},
+		{Key: "access_key", Value: f.AccessKey},
 	}
 }
 

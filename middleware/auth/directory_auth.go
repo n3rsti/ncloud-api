@@ -12,7 +12,7 @@ func DirectoryAuth() gin.HandlerFunc {
 
 		// Verify access key
 		claims, isValidAccessKey := ValidateAccessKey(directoryAccessKey)
-		if isValidAccessKey == false || directoryAccessKey == "" || claims.Id != directory {
+		if !isValidAccessKey || directoryAccessKey == "" || claims.Id != directory {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "invalid access key",
 			})

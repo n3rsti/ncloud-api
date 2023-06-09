@@ -12,8 +12,8 @@ type User struct {
 
 func (u *User) ToBSON() bson.D {
 	return bson.D{
-		{"username", u.Username},
-		{"password", u.Password},
-		{"trash_access_key", u.TrashAccessKey},
+		{Key: "username", Value: u.Username},
+		{Key: "password", Value: u.Password},
+		{Key: "trash_access_key", Value: u.TrashAccessKey},
 	}
 }

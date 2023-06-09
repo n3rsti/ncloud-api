@@ -6,7 +6,7 @@ import (
 )
 
 type AccessKey struct {
-	Id string
+	Id          string
 	Permissions []string
 }
 
@@ -19,9 +19,8 @@ func FileAuth() gin.HandlerFunc {
 			idParam = c.Request.RequestURI[len("/files/"):]
 		}
 
-
 		claims, isValidAccessKey := ValidateAccessKey(fileAccessKey)
-		if isValidAccessKey == false || claims.Id != idParam {
+		if !isValidAccessKey || claims.Id != idParam {
 			c.Status(http.StatusForbidden)
 			c.Abort()
 			return

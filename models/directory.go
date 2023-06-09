@@ -17,9 +17,9 @@ type Directory struct {
 
 func (d *Directory) ToBSON() bson.D {
 	return bson.D{
-		{"name", d.Name},
-		{"parent_directory", d.ParentDirectory},
-		{"user", d.User},
+		{Key: "name", Value: d.Name},
+		{Key: "parent_directory", Value: d.ParentDirectory},
+		{Key: "user", Value: d.User},
 	}
 }
 

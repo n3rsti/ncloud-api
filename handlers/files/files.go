@@ -141,18 +141,18 @@ func (h *Handler) Upload(c *gin.Context) {
 
 		if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+fileId); err != nil {
 			// Remove file document if saving it wasn't successful
-			_, _ = collection.DeleteOne(c, bson.D{{"_id", res.InsertedIDs[index]}})
+			_, _ = collection.DeleteOne(c, bson.D{{Key: "_id", Value: res.InsertedIDs[index]}})
 			log.Panic(err)
 		}
 
 		permissions := auth.AllFilePermissions
 		// No need to verify directory, because it is verified by parsing it to primitive.ObjectID (parentDirObjectId)
-		fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
+		fileAccessKey, _ := auth.GenerateFileAccessKey(fileId, permissions, directory)
 
 		filesToReturn[index].AccessKey = fileAccessKey
 		filesToReturn[index].Id = res.InsertedIDs[index].(primitive.ObjectID).Hex()
 
-		if _, err = collection.UpdateByID(c, res.InsertedIDs[index], bson.D{{"$set", bson.M{"access_key": fileAccessKey}}}); err != nil {
+		if _, err = collection.UpdateByID(c, res.InsertedIDs[index], bson.D{{Key: "$set", Value: bson.M{"access_key": fileAccessKey}}}); err != nil {
 			log.Panic(err)
 		}
 
@@ -197,7 +197,10 @@ func (h *Handler) DeleteFile(c *gin.Context) {
 
 	collection := h.Db.Collection("files")
 
-	_, err = collection.DeleteOne(c, bson.D{{"_id", hexFileId}})
+	_, err = collection.DeleteOne(c, bson.D{{Key: "_id", Value: hexFileId}})
+	if err != nil {
+		log.Println(err)
+	}
 
 	// Update search database
 	h.DeleteFromSearchDatabase([]string{fileId})
@@ -239,7 +242,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 
 		_, validAccessKey := auth.ValidateAccessKey(parentDirectoryAccessKey)
 
-		if validAccessKey == false {
+		if !validAccessKey {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "invalid directory access key",
 			})
@@ -250,7 +253,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		var result bson.M
 
 		directoryCollection := h.Db.Collection("directories")
-		err := directoryCollection.FindOne(c, bson.D{{"_id", file.ParentDirectory}}).Decode(&result)
+		err := directoryCollection.FindOne(c, bson.D{{Key: "_id", Value: file.ParentDirectory}}).Decode(&result)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "new parent directory not found",
@@ -298,7 +301,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		return
 	}
 
-	_, err = fileCollection.UpdateByID(c, hexId, bson.D{{"$set", file.ToBSONnotEmpty()}})
+	_, err = fileCollection.UpdateByID(c, hexId, bson.D{{Key: "$set", Value: file.ToBSONnotEmpty()}})
 	if err != nil {
 		fmt.Println(err)
 		c.Status(http.StatusBadRequest)

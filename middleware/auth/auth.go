@@ -82,7 +82,7 @@ func GenerateAccessTokenFromRefreshToken(refreshToken string) (accessToken strin
 		return "", errors.New("provided token is not refresh token")
 	}
 
-	newAccessToken, err := generateAccessToken(claims.Id)
+	newAccessToken, _ := generateAccessToken(claims.Id)
 
 	return newAccessToken, nil
 }
@@ -107,17 +107,19 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 
 // GenerateFileAccessKey
 // generates access key for file or directory with parameters:
-// 		id, permissions, parentDirectory (optional)
+//
+//	id, permissions, parentDirectory (optional)
+//
 // parentDirectory should only be used for files and doesn't need to be verified before
 //
 // although parentDirectory is optional as function argument, it is MANDATORY to use parentDirectory for files
-//     fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
-//     if err != nil {
-//         log.Fatal(err)
-//     }
-//     fmt.Println(fileAccessKey.id)
-//     fmt.Println(fileAccessKey.permissions)
 //
+//	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Println(fileAccessKey.id)
+//	fmt.Println(fileAccessKey.permissions)
 func GenerateFileAccessKey(id string, permissions []string, parentDirectory ...string) (string, error) {
 	// Verify id format
 	if _, err := primitive.ObjectIDFromHex(id); err != nil {
@@ -157,10 +159,6 @@ func ValidateAccessKey(accessKey string) (claims *FileClaims, valid bool) {
 	}
 
 	claims, ok := token.Claims.(*FileClaims)
-	if !ok {
-		err = errors.New("couldn't parse claims")
-		return
-	}
 
 	if !ok {
 		return &FileClaims{}, false
@@ -179,10 +177,7 @@ func ValidatePermissions(accessKey, permission string) bool {
 		})
 
 	claims, _ := token.Claims.(*FileClaims)
-	if helper.StringArrayContains(claims.Permissions, permission) {
-		return true
-	}
-	return false
+	return helper.StringArrayContains(claims.Permissions, permission)
 }
 
 func ValidateToken(signedToken string) (claims *SignedClaims, err error) {

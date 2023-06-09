@@ -1,7 +1,6 @@
 package user
 
 import (
-	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -62,8 +61,8 @@ func (h *Handler) Register(c *gin.Context) {
 
 	// Create trash and main directory documents
 	docs := []interface{}{
-		bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", "Main"}},
-		bson.D{{"user", userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {"name", "Trash"}},
+		bson.D{{Key: "user", Value: userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {Key: "name", Value: "Main"}},
+		bson.D{{Key: "user", Value: userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {Key: "name", Value: "Trash"}},
 	}
 
 	opts := options.InsertMany().SetOrdered(true)
@@ -74,23 +73,23 @@ func (h *Handler) Register(c *gin.Context) {
 	trashId := res.InsertedIDs[1].(primitive.ObjectID).Hex()
 
 	// TODO: do something on error
-	if err := os.Mkdir(files.UploadDestination + mainDirId, 0700); err != nil {
+	if err := os.Mkdir(files.UploadDestination+mainDirId, 0700); err != nil {
 		log.Println(err)
 	}
-	if err := os.Mkdir(files.UploadDestination + trashId, 0700); err != nil {
+	if err := os.Mkdir(files.UploadDestination+trashId, 0700); err != nil {
 		log.Println(err)
 	}
 
 	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
-	mainDirAccessKey, err := auth.GenerateFileAccessKey(mainDirId, permissions)
-	trashAccessKey, err := auth.GenerateFileAccessKey(trashId, permissions)
+	mainDirAccessKey, _ := auth.GenerateFileAccessKey(mainDirId, permissions)
+	trashAccessKey, _ := auth.GenerateFileAccessKey(trashId, permissions)
 
-	collection.UpdateByID(c, res.InsertedIDs[0], bson.D{{"$set", bson.M{"access_key": mainDirAccessKey}}})
+	collection.UpdateByID(c, res.InsertedIDs[0], bson.D{{Key: "$set", Value: bson.M{"access_key": mainDirAccessKey}}})
 
 	collection = h.Db.Collection("user")
 	collection.UpdateByID(c, userInsertResult.InsertedID,
-		bson.D{{"$set", bson.D{
-			{"trash_access_key", trashAccessKey},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "trash_access_key", Value: trashAccessKey},
 		}}},
 	)
 
@@ -121,7 +120,7 @@ func (h *Handler) Login(c *gin.Context) {
 	var result bson.M
 
 	collection := h.Db.Collection("user")
-	err := collection.FindOne(c, bson.D{{"username", loginData.Username}}).Decode(&result)
+	err := collection.FindOne(c, bson.D{{Key: "username", Value: loginData.Username}}).Decode(&result)
 
 	if err != nil {
 		fmt.Println(err)
@@ -132,7 +131,7 @@ func (h *Handler) Login(c *gin.Context) {
 	passwordHash := result["password"].(string)
 
 	isValidPassword := crypto.ComparePasswordAndHash(loginData.Password, passwordHash)
-	if isValidPassword == false {
+	if !isValidPassword {
 		fmt.Println(err)
 		c.Status(http.StatusForbidden)
 		return
@@ -154,13 +153,11 @@ func (h *Handler) Login(c *gin.Context) {
 	trashAccessKey := result["trash_access_key"].(string)
 
 	c.JSON(http.StatusOK, gin.H{
-		"username":      loginData.Username,
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
+		"username":         loginData.Username,
+		"access_token":     accessToken,
+		"refresh_token":    refreshToken,
 		"trash_access_key": trashAccessKey,
 	})
-
-	return
 }
 
 func (h *Handler) RefreshToken(c *gin.Context) {
@@ -183,17 +180,4 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
 	})
-}
-
-func (h *Handler) getMainDirectoryAccessKey(c *gin.Context, userId string) (string, error) {
-	collection := h.Db.Collection("directories")
-
-	var result bson.M
-
-	if err := collection.FindOne(c, bson.D{{"name", ""}, {"user", userId}}).Decode(&result); err != nil {
-		return "", errors.New("error finding directory")
-	}
-
-	return result["access_key"].(string), nil
-
 }
