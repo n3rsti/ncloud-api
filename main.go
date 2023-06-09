@@ -44,12 +44,15 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
 	}
 
 	opts := options.Find().SetProjection(bson.D{
-		{"_id", 1}, {"name", 1},
-		{"parent_directory", 1}, {"user", 1}},
+		{Key: "_id", Value: 1}, {Key: "name", Value: 1},
+		{Key: "parent_directory", Value: 1}, {Key: "user", Value: 1}},
 	)
 
 	// Add directories to meilisearch
 	cursor, err := db.Collection("directories").Find(context.TODO(), bson.D{}, opts)
+	if err != nil {
+		log.Panic(err)
+	}
 	var results []bson.M
 	if err = cursor.All(context.TODO(), &results); err != nil {
 		log.Fatal(err)
@@ -62,18 +65,22 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
 
 	// Add files to meilisearch
 	opts = options.Find().SetProjection(bson.D{
-		{"_id", 1}, {"name", 1},
-		{"parent_directory", 1}, {"user", 1}, {"type", 1}},
+		{Key: "_id", Value: 1}, {Key: "name", Value: 1},
+		{Key: "parent_directory", Value: 1}, {Key: "user", Value: 1}, {Key: "type", Value: 1}},
 	)
 
 	cursor, err = db.Collection("files").Find(context.TODO(), bson.D{}, opts)
+	if err != nil {
+		log.Panic(err)
+	}
+
 	if err = cursor.All(context.TODO(), &results); err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	_, err = meiliClient.Index("files").AddDocuments(results)
 	if err != nil {
-		panic(err)
+		log.Panic()
 	}
 
 	if _, err := meiliClient.Index("files").UpdateFilterableAttributes(&filterableAttributes); err != nil {
@@ -158,6 +165,7 @@ func main() {
 			directoryGroup.POST("upload/:id", fileHandler.Upload)
 			directoryGroup.PATCH("directories/:id", directoryHandler.ModifyDirectory)
 			directoryGroup.DELETE("directories/:id", directoryHandler.DeleteDirectory)
+			directoryGroup.DELETE("directories/:id/files", fileHandler.DeleteMultipleFiles)
 		}
 
 		fileGroup := authorized.Group("/")

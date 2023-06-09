@@ -1,14 +1,8 @@
 package files
 
 import (
+	"context"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
-	"github.com/meilisearch/meilisearch-go"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"mime/multipart"
 	"ncloud-api/handlers/search"
@@ -16,6 +10,14 @@ import (
 	"ncloud-api/models"
 	"net/http"
 	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/meilisearch/meilisearch-go"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const UploadDestination = "/var/ncloud_upload/"
@@ -332,4 +334,29 @@ func (h *Handler) GetFile(c *gin.Context) {
 	claims, _ := auth.ValidateAccessKey(fileAccessKey)
 
 	c.File(UploadDestination + claims.ParentDirectory + "/" + claims.Id)
+}
+
+func (h *Handler) DeleteMultipleFiles(c *gin.Context){
+	directoryId := c.Param("id")
+	directoryObjectId, _ := primitive.ObjectIDFromHex(directoryId)
+
+	// map to ObjectID
+	files := make([]primitive.ObjectID, 0, 100)
+	if err := c.MustBindWith(&files, binding.JSON); err != nil {
+		return
+	}
+
+	
+	collection := h.Db.Collection("files")
+	res, err := collection.DeleteMany(context.TODO(), bson.D{{Key: "parent_directory", Value: directoryObjectId}, {Key: "_id", Value: bson.D{{Key: "$in", Value: files}}}})
+	if err != nil {
+		log.Panic(err)
+	}
+
+
+
+	c.JSON(http.StatusOK, gin.H{
+		"deleted": res.DeletedCount,
+	})
+
 }
