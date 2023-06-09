@@ -85,6 +85,7 @@ func (h *Handler) Register(c *gin.Context) {
 	trashAccessKey, _ := auth.GenerateFileAccessKey(trashId, permissions)
 
 	collection.UpdateByID(c, res.InsertedIDs[0], bson.D{{Key: "$set", Value: bson.M{"access_key": mainDirAccessKey}}})
+	collection.UpdateByID(c, res.InsertedIDs[1], bson.D{{Key: "$set", Value: bson.M{"access_key": trashAccessKey}}})
 
 	collection = h.Db.Collection("user")
 	collection.UpdateByID(c, userInsertResult.InsertedID,

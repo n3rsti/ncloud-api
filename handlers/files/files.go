@@ -353,6 +353,14 @@ func (h *Handler) DeleteMultipleFiles(c *gin.Context){
 		log.Panic(err)
 	}
 
+	// Convert to string and remove from search database
+	stringFiles := make([]string, 0, 100)
+	for _, val := range files {
+		stringFiles = append(stringFiles, val.Hex())
+	}
+
+	h.SearchDb.Index("files").DeleteDocuments(stringFiles)
+
 
 
 	c.JSON(http.StatusOK, gin.H{
