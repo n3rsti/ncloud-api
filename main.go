@@ -165,6 +165,7 @@ func main() {
 			directoryGroup.POST("upload/:id", fileHandler.Upload)
 			directoryGroup.PATCH("directories/:id", directoryHandler.ModifyDirectory)
 			directoryGroup.DELETE("directories/:id", directoryHandler.DeleteDirectory)
+			directoryGroup.DELETE("directories/:id/directories", directoryHandler.DeleteDirectory)
 			directoryGroup.DELETE("directories/:id/files", fileHandler.DeleteMultipleFiles)
 		}
 

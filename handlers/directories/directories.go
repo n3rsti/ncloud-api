@@ -3,11 +3,6 @@ package directories
 import (
 	"context"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/meilisearch/meilisearch-go"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 	"log"
 	"ncloud-api/handlers/files"
 	"ncloud-api/handlers/search"
@@ -16,6 +11,13 @@ import (
 	"ncloud-api/utils/helper"
 	"net/http"
 	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/meilisearch/meilisearch-go"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type Handler struct {
@@ -368,9 +370,21 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 		return
 	}
 
+	directoryId, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		log.Panic(err)
+	}
+
 	claims := auth.ExtractClaimsFromContext(c)
 	user := claims.Id
-	directoryId := c.Param("id")
+
+	
+	directories := make([]primitive.ObjectID, 0, 100)
+	c.ShouldBindWith(&directories, binding.JSON)
+	// no need to check for error. if list in body is empty, directory from URL will be deleted
+
+
+	
 
 	collection := h.Db.Collection("directories")
 
@@ -404,17 +418,22 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 		}
 	}
 
-	// Convert string id to ObjectID
-	dirIdObjectId, _ := primitive.ObjectIDFromHex(directoryId)
+	var directoryList []primitive.ObjectID
 
-	// Create list of directories to delete: directory to delete and all directories inside
-	directoryList := filterDirectories(dict, dict[dirIdObjectId])
-	directoryList = append(directoryList, dirIdObjectId)
+	for _, val := range directories {
+		directoryList = append(directoryList, filterDirectories(dict, dict[val])...)
+		directoryList = append(directoryList, val)
+	}
+
+	// If there is no directories in body, delete directory by ID parameter
+	if len(directoryList) == 0 {
+		directoryList = append(directoryList, directoryId)
+	}
 
 	// Remove all file documents from DB
 	collection = h.Db.Collection("files")
 
-	_, err = collection.DeleteMany(context.TODO(), bson.D{{Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryList}}}})
+	_, err = collection.DeleteMany(context.TODO(), bson.D{{Key: "user", Value: claims.Id}, {Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryList}}}})
 	if err != nil {
 		log.Panic(err)
 	}
@@ -422,7 +441,7 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 	// Remove all directories documents from DB
 	collection = h.Db.Collection("directories")
 
-	_, err = collection.DeleteMany(context.TODO(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: directoryList}}}})
+	_, err = collection.DeleteMany(context.TODO(), bson.D{{Key: "user", Value: claims.Id}, {Key: "_id", Value: bson.D{{Key: "$in", Value: directoryList}}}})
 	if err != nil {
 		log.Panic(err)
 	}
