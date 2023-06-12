@@ -3,6 +3,7 @@ package directories
 import (
 	"context"
 	"fmt"
+	"github.com/meilisearch/meilisearch-go"
 	"log"
 	"ncloud-api/handlers/files"
 	"ncloud-api/handlers/search"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
-	"github.com/meilisearch/meilisearch-go"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -360,31 +360,9 @@ func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentD
 
 }
 
-func (h *Handler) DeleteDirectory(c *gin.Context) {
-	// Verify permissions from access key
-	directoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
-	if !helper.StringArrayContains(directoryAccessKey.Permissions, auth.PermissionDelete) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "no permission to delete this directory",
-		})
-		return
-	}
-
-	directoryId, err := primitive.ObjectIDFromHex(c.Param("id"))
-	if err != nil {
-		log.Panic(err)
-	}
-
+func (h *Handler) deleteDirectories(c *gin.Context, directories []primitive.ObjectID) {
 	claims := auth.ExtractClaimsFromContext(c)
 	user := claims.Id
-
-	
-	directories := make([]primitive.ObjectID, 0, 100)
-	c.ShouldBindWith(&directories, binding.JSON)
-	// no need to check for error. if list in body is empty, directory from URL will be deleted
-
-
-	
 
 	collection := h.Db.Collection("directories")
 
@@ -425,11 +403,6 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 		directoryList = append(directoryList, val)
 	}
 
-	// If there is no directories in body, delete directory by ID parameter
-	if len(directoryList) == 0 {
-		directoryList = append(directoryList, directoryId)
-	}
-
 	// Remove all file documents from DB
 	collection = h.Db.Collection("files")
 
@@ -442,6 +415,109 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 	collection = h.Db.Collection("directories")
 
 	_, err = collection.DeleteMany(context.TODO(), bson.D{{Key: "user", Value: claims.Id}, {Key: "_id", Value: bson.D{{Key: "$in", Value: directoryList}}}})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	// Remove all directories (with files) from disk
+	for _, directory := range directoryList {
+		if err = os.RemoveAll(files.UploadDestination + directory.Hex()); err != nil {
+			log.Panic(err)
+		}
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) PatchDirectories(c *gin.Context) {
+	type RequestData struct {
+		Operation   string `json:"operation"`
+		Directories []primitive.ObjectID `json:"items"`
+	}
+
+	var requestData RequestData
+
+	c.MustBindWith(&requestData, binding.JSON)
+
+	fmt.Println(requestData.Operation)
+	fmt.Println(requestData.Directories)
+
+	if requestData.Operation == "delete" {
+		h.deleteDirectories(c, requestData.Directories)
+		return
+	}
+
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": "invalid operation",
+	})
+
+}
+
+func (h *Handler) DeleteDirectory(c *gin.Context) {
+	// Verify permissions from access key
+	directoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
+	if !helper.StringArrayContains(directoryAccessKey.Permissions, auth.PermissionDelete) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "no permission to delete this directory",
+		})
+		return
+	}
+
+	claims := auth.ExtractClaimsFromContext(c)
+	user := claims.Id
+	directoryId := c.Param("id")
+
+	collection := h.Db.Collection("directories")
+
+	// Get all directories with user from claims, with existing parent_directory:
+	// everything except trash, main directory and potential future directories that can't be deleted anyway
+	cursor, err := collection.Find(context.TODO(), bson.D{{Key: "user", Value: user}, {Key: "parent_directory", Value: bson.D{{Key: "$exists", Value: true}}}})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	var results []bson.M
+	if err = cursor.All(context.TODO(), &results); err != nil {
+		log.Panic(err)
+	}
+
+	/*
+		Map folders into hash map in format:
+		parent_directory: [child_directory1, child_directory2, ...]
+
+		(parent and child directories are in ObjectID type for easier filtering)
+	*/
+
+	dict := make(map[primitive.ObjectID][]primitive.ObjectID, len(results))
+	for _, result := range results {
+		resId := result["parent_directory"].(primitive.ObjectID)
+
+		if value, ok := dict[resId]; ok {
+			dict[resId] = append(value, result["_id"].(primitive.ObjectID))
+		} else {
+			dict[resId] = []primitive.ObjectID{result["_id"].(primitive.ObjectID)}
+		}
+	}
+
+	// Convert string id to ObjectID
+	dirIdObjectId, _ := primitive.ObjectIDFromHex(directoryId)
+
+	// Create list of directories to delete: directory to delete and all directories inside
+	directoryList := filterDirectories(dict, dict[dirIdObjectId])
+	directoryList = append(directoryList, dirIdObjectId)
+
+	// Remove all file documents from DB
+	collection = h.Db.Collection("files")
+
+	_, err = collection.DeleteMany(context.TODO(), bson.D{{Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryList}}}})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	// Remove all directories documents from DB
+	collection = h.Db.Collection("directories")
+
+	_, err = collection.DeleteMany(context.TODO(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: directoryList}}}})
 	if err != nil {
 		log.Panic(err)
 	}

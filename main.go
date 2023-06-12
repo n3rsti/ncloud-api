@@ -157,6 +157,7 @@ func main() {
 
 		authorized.GET("/api/directories", directoryHandler.GetDirectoryWithFiles)
 		authorized.GET("/api/directories/:id", directoryHandler.GetDirectoryWithFiles)
+		authorized.PATCH("/api/directories", directoryHandler.PatchDirectories)
 
 		directoryGroup := authorized.Group("/api/")
 		directoryGroup.Use(auth.DirectoryAuth())
@@ -165,7 +166,7 @@ func main() {
 			directoryGroup.POST("upload/:id", fileHandler.Upload)
 			directoryGroup.PATCH("directories/:id", directoryHandler.ModifyDirectory)
 			directoryGroup.DELETE("directories/:id", directoryHandler.DeleteDirectory)
-			directoryGroup.DELETE("directories/:id/directories", directoryHandler.DeleteDirectory)
+			
 			directoryGroup.DELETE("directories/:id/files", fileHandler.DeleteMultipleFiles)
 		}
 
