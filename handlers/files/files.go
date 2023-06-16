@@ -22,6 +22,12 @@ import (
 
 const UploadDestination = "/var/ncloud_upload/"
 
+type PatchRequestData struct {
+	DirectoryId primitive.ObjectID `json:"id"`
+	AccessKey string `json:"access_key"`
+	Files     []primitive.ObjectID `json:"files"`
+}
+
 type Handler struct {
 	Db       *mongo.Database
 	SearchDb *meilisearch.Client
@@ -336,35 +342,76 @@ func (h *Handler) GetFile(c *gin.Context) {
 	c.File(UploadDestination + claims.ParentDirectory + "/" + claims.Id)
 }
 
-func (h *Handler) DeleteMultipleFiles(c *gin.Context){
-	directoryId := c.Param("id")
-	directoryObjectId, _ := primitive.ObjectIDFromHex(directoryId)
+func (h *Handler) deleteMultipleFiles(c *gin.Context, data []PatchRequestData) {
+	// TODO: adjust size (limit)
+	deleteQuery := make([]bson.D, 0, 10)
+	filesToDelete := make([]string, 0)
 
-	// map to ObjectID
-	files := make([]primitive.ObjectID, 0, 100)
-	if err := c.MustBindWith(&files, binding.JSON); err != nil {
-		return
+	for _, directory := range data {
+		if isValid := auth.ValidateAccessKeyWithId(directory.AccessKey, directory.DirectoryId.Hex()); !isValid {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "invalid access key for directory: " + directory.DirectoryId.Hex(),
+			})
+			return
+		}
+
+		deleteQuery = append(deleteQuery, bson.D{
+			{Key: "parent_directory", Value: directory.DirectoryId}, 
+			{Key: "_id", Value: bson.D{
+				{Key: "$in", Value: directory.Files},
+			}},
+		})
 	}
 
-	
 	collection := h.Db.Collection("files")
-	res, err := collection.DeleteMany(context.TODO(), bson.D{{Key: "parent_directory", Value: directoryObjectId}, {Key: "_id", Value: bson.D{{Key: "$in", Value: files}}}})
+
+	fmt.Println(deleteQuery)
+
+	result, err := collection.DeleteMany(context.TODO(), bson.D{{Key: "$or", Value: deleteQuery}})
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// Convert to string and remove from search database
-	stringFiles := make([]string, 0, 100)
-	for _, val := range files {
-		stringFiles = append(stringFiles, val.Hex())
+	for _, directory := range data {
+		for _, file := range directory.Files {
+			if err := os.Remove(UploadDestination + directory.DirectoryId.Hex() + "/" + file.Hex()); err != nil {
+				log.Println(err)
+			}
+
+			filesToDelete = append(filesToDelete, file.Hex())
+		}
 	}
 
-	h.SearchDb.Index("files").DeleteDocuments(stringFiles)
-
+	fmt.Println(filesToDelete)
+	if _, err := h.SearchDb.Index("files").DeleteDocuments(filesToDelete); err != nil {
+		log.Println(err)
+	}
 
 
 	c.JSON(http.StatusOK, gin.H{
-		"deleted": res.DeletedCount,
+		"deleted": result.DeletedCount,
 	})
 
+}
+
+func (h *Handler) PatchFiles(c *gin.Context) {
+	type RequestData struct {
+		Operation string
+		Items     []PatchRequestData
+	}
+
+	var requestData RequestData
+
+	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
+		log.Panic(err)
+	}
+
+	if requestData.Operation == "delete" {
+		h.deleteMultipleFiles(c, requestData.Items)
+		return
+	}
+
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": "unknown operation",
+	})
 }

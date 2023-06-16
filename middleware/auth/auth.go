@@ -167,6 +167,15 @@ func ValidateAccessKey(accessKey string) (claims *FileClaims, valid bool) {
 	return claims, true
 }
 
+func ValidateAccessKeyWithId(accessKey, id string) bool{
+	claims, valid := ValidateAccessKey(accessKey)
+	if !valid {
+		return false
+	}
+
+	return claims.Id == id
+}
+
 // ValidatePermissions MUST only be used after ValidateAccessKey function
 func ValidatePermissions(accessKey, permission string) bool {
 	token, _ := jwt.ParseWithClaims(

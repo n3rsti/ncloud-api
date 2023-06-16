@@ -147,6 +147,7 @@ func main() {
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)
 	router.GET("/api/token/refresh", userHandler.RefreshToken)
+	router.PATCH("/api/files", fileHandler.PatchFiles)
 
 	router.MaxMultipartMemory = 8 << 20 // 8 MiB
 
@@ -167,7 +168,7 @@ func main() {
 			directoryGroup.PATCH("directories/:id", directoryHandler.ModifyDirectory)
 			directoryGroup.DELETE("directories/:id", directoryHandler.DeleteDirectory)
 			
-			directoryGroup.DELETE("directories/:id/files", fileHandler.DeleteMultipleFiles)
+			
 		}
 
 		fileGroup := authorized.Group("/")
