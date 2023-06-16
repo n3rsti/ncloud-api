@@ -3,14 +3,6 @@ package files
 import (
 	"context"
 	"fmt"
-	"log"
-	"mime/multipart"
-	"ncloud-api/handlers/search"
-	"ncloud-api/middleware/auth"
-	"ncloud-api/models"
-	"net/http"
-	"os"
-
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/meilisearch/meilisearch-go"
@@ -18,15 +10,16 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"log"
+	"mime/multipart"
+	"ncloud-api/handlers/search"
+	"ncloud-api/middleware/auth"
+	"ncloud-api/models"
+	"net/http"
+	"os"
 )
 
 const UploadDestination = "/var/ncloud_upload/"
-
-type PatchRequestData struct {
-	DirectoryId primitive.ObjectID `json:"id"`
-	AccessKey string `json:"access_key"`
-	Files     []primitive.ObjectID `json:"files"`
-}
 
 type Handler struct {
 	Db       *mongo.Database
@@ -342,9 +335,20 @@ func (h *Handler) GetFile(c *gin.Context) {
 	c.File(UploadDestination + claims.ParentDirectory + "/" + claims.Id)
 }
 
-func (h *Handler) deleteMultipleFiles(c *gin.Context, data []PatchRequestData) {
-	// TODO: adjust size (limit)
-	deleteQuery := make([]bson.D, 0, 10)
+func (h *Handler) DeleteFiles(c *gin.Context) {
+	type RequestData struct {
+		DirectoryId primitive.ObjectID   `json:"id"`
+		AccessKey   string               `json:"access_key"`
+		Files       []primitive.ObjectID `json:"files"`
+	}
+
+	var data []RequestData
+
+	if err := c.MustBindWith(&data, binding.JSON); err != nil {
+		log.Println(err)
+	}
+
+	deleteQuery := make([]bson.D, 0)
 	filesToDelete := make([]string, 0)
 
 	for _, directory := range data {
@@ -356,7 +360,7 @@ func (h *Handler) deleteMultipleFiles(c *gin.Context, data []PatchRequestData) {
 		}
 
 		deleteQuery = append(deleteQuery, bson.D{
-			{Key: "parent_directory", Value: directory.DirectoryId}, 
+			{Key: "parent_directory", Value: directory.DirectoryId},
 			{Key: "_id", Value: bson.D{
 				{Key: "$in", Value: directory.Files},
 			}},
@@ -364,8 +368,6 @@ func (h *Handler) deleteMultipleFiles(c *gin.Context, data []PatchRequestData) {
 	}
 
 	collection := h.Db.Collection("files")
-
-	fmt.Println(deleteQuery)
 
 	result, err := collection.DeleteMany(context.TODO(), bson.D{{Key: "$or", Value: deleteQuery}})
 	if err != nil {
@@ -382,36 +384,12 @@ func (h *Handler) deleteMultipleFiles(c *gin.Context, data []PatchRequestData) {
 		}
 	}
 
-	fmt.Println(filesToDelete)
 	if _, err := h.SearchDb.Index("files").DeleteDocuments(filesToDelete); err != nil {
 		log.Println(err)
 	}
-
 
 	c.JSON(http.StatusOK, gin.H{
 		"deleted": result.DeletedCount,
 	})
 
-}
-
-func (h *Handler) PatchFiles(c *gin.Context) {
-	type RequestData struct {
-		Operation string
-		Items     []PatchRequestData
-	}
-
-	var requestData RequestData
-
-	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
-		log.Panic(err)
-	}
-
-	if requestData.Operation == "delete" {
-		h.deleteMultipleFiles(c, requestData.Items)
-		return
-	}
-
-	c.JSON(http.StatusBadRequest, gin.H{
-		"error": "unknown operation",
-	})
 }

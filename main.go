@@ -148,7 +148,7 @@ func main() {
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)
 	router.GET("/api/token/refresh", userHandler.RefreshToken)
-	router.PATCH("/api/files", fileHandler.PatchFiles)
+	router.POST("/api/files/delete", fileHandler.DeleteFiles)
 
 	router.MaxMultipartMemory = 8 << 20 // 8 MiB
 
