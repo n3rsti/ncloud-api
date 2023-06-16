@@ -134,7 +134,7 @@ func main() {
 	//initMeiliSearch(db, meiliClient)
 
 	// Handlers
-	userHandler := user.Handler{Db: db}
+	userHandler := user.Handler{Db: db, SearchDb: meiliClient}
 	fileHandler := files.Handler{Db: db, SearchDb: meiliClient}
 	directoryHandler := directories.Handler{Db: db, SearchDb: meiliClient}
 	searchHandler := search.Handler{Db: meiliClient}

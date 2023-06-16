@@ -2,12 +2,6 @@ package user
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"gopkg.in/validator.v2"
 	"log"
 	"ncloud-api/handlers/files"
 	"ncloud-api/middleware/auth"
@@ -15,10 +9,26 @@ import (
 	"ncloud-api/utils/crypto"
 	"net/http"
 	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/meilisearch/meilisearch-go"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"gopkg.in/validator.v2"
 )
 
 type Handler struct {
 	Db *mongo.Database
+	SearchDb *meilisearch.Client
+}
+
+type SearchDatabaseData struct {
+	Id        string `json:"_id"`
+	Name      string `json:"name,omitempty"`
+	Directory string `json:"parent_directory,omitempty"`
+	User      string `json:"user,omitempty"`
 }
 
 func (h *Handler) Register(c *gin.Context) {
@@ -96,6 +106,23 @@ func (h *Handler) Register(c *gin.Context) {
 
 	// Remove password so it won't be included in response
 	user.Password = ""
+
+	// Add to search database
+	if _, err := h.SearchDb.Index("directories").AddDocuments(&SearchDatabaseData{
+		Id:        res.InsertedIDs[0].(primitive.ObjectID).Hex(),
+		Name:      "Main",
+		User:      userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
+	}); err != nil {
+		log.Println(err)
+	}
+
+	if _, err := h.SearchDb.Index("directories").AddDocuments(&SearchDatabaseData{
+		Id:        res.InsertedIDs[1].(primitive.ObjectID).Hex(),
+		Name:      "Trash",
+		User:      userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
+	}); err != nil {
+		log.Println(err)
+	}
 
 	c.JSON(http.StatusCreated, user)
 }
