@@ -404,22 +404,32 @@ func (h *Handler) findAndMapDirectories(user string) map[primitive.ObjectID][]pr
 	return dict
 }
 
-func (h *Handler) deleteDirectories(c *gin.Context, directories []PatchRequestData) {
+func (h *Handler) DeleteDirectories(c *gin.Context) {
+	type RequestData struct {
+		Id        primitive.ObjectID `json:"id"`
+		AccessKey string             `json:"access_key"`
+	}
+	directories := make([]RequestData, 0)
+
+	if err := c.MustBindWith(&directories, binding.JSON); err != nil {
+		fmt.Println(err)
+	}
+
 	directoriesToDelete := make([]primitive.ObjectID, 0)
 	directoryStringList := make([]string, 0)
 	fileDeleteQuery := make([]string, 0)
 
 	for _, directory := range directories {
-		if isValid := auth.ValidateAccessKeyWithId(directory.AccessKey, directory.DirectoryId.Hex()); !isValid {
+		if isValid := auth.ValidateAccessKeyWithId(directory.AccessKey, directory.Id.Hex()); !isValid {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "invalid access key for directory: " + directory.DirectoryId.Hex(),
+				"error": "invalid access key for directory: " + directory.Id.Hex(),
 			})
 			return
 		}
 
-		directoriesToDelete = append(directoriesToDelete, directory.DirectoryId)
-		directoryStringList = append(directoryStringList, directory.DirectoryId.Hex())
-		fileDeleteQuery = append(fileDeleteQuery, "parent_directory = "+directory.DirectoryId.Hex())
+		directoriesToDelete = append(directoriesToDelete, directory.Id)
+		directoryStringList = append(directoryStringList, directory.Id.Hex())
+		fileDeleteQuery = append(fileDeleteQuery, "parent_directory = "+directory.Id.Hex())
 	}
 
 	claims := auth.ExtractClaimsFromContext(c)
@@ -466,27 +476,6 @@ func (h *Handler) deleteDirectories(c *gin.Context, directories []PatchRequestDa
 	}
 
 	c.Status(http.StatusNoContent)
-}
-
-func (h *Handler) PatchDirectories(c *gin.Context) {
-	type RequestData struct {
-		Operation   string             `json:"operation"`
-		Directories []PatchRequestData `json:"items"`
-	}
-
-	var requestData RequestData
-
-	c.MustBindWith(&requestData, binding.JSON)
-
-	if requestData.Operation == "delete" {
-		h.deleteDirectories(c, requestData.Directories)
-		return
-	}
-
-	c.JSON(http.StatusBadRequest, gin.H{
-		"error": "invalid operation",
-	})
-
 }
 
 func (h *Handler) DeleteDirectory(c *gin.Context) {

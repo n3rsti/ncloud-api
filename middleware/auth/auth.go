@@ -280,6 +280,7 @@ func Auth() gin.HandlerFunc {
 		claims, err := ValidateToken(token)
 
 		if err != nil {
+			fmt.Print("XD")
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid access token",
 			})
