@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/gin-gonic/gin v1.8.2
 	github.com/golang-jwt/jwt/v4 v4.5.0
-	github.com/meilisearch/meilisearch-go v0.24.0
+	github.com/meilisearch/meilisearch-go v0.25.0
 	go.mongodb.org/mongo-driver v1.11.1
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d
 	gopkg.in/validator.v2 v2.0.1

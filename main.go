@@ -3,11 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/meilisearch/meilisearch-go"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"ncloud-api/handlers/directories"
 	"ncloud-api/handlers/files"
@@ -18,6 +13,12 @@ import (
 	"ncloud-api/utils/helper"
 	"net/http"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/meilisearch/meilisearch-go"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var DbHost string
@@ -167,8 +168,7 @@ func main() {
 			directoryGroup.POST("upload/:id", fileHandler.Upload)
 			directoryGroup.PATCH("directories/:id", directoryHandler.ModifyDirectory)
 			directoryGroup.DELETE("directories/:id", directoryHandler.DeleteDirectory)
-			
-			
+
 		}
 
 		fileGroup := authorized.Group("/")

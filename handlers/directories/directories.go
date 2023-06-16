@@ -3,7 +3,6 @@ package directories
 import (
 	"context"
 	"fmt"
-	"github.com/meilisearch/meilisearch-go"
 	"log"
 	"ncloud-api/handlers/files"
 	"ncloud-api/handlers/search"
@@ -12,6 +11,9 @@ import (
 	"ncloud-api/utils/helper"
 	"net/http"
 	"os"
+	"strings"
+
+	"github.com/meilisearch/meilisearch-go"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -19,6 +21,11 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
+
+type PatchRequestData struct {
+	DirectoryId primitive.ObjectID `json:"id"`
+	AccessKey   string             `json:"access_key"`
+}
 
 type Handler struct {
 	Db       *mongo.Database
@@ -360,10 +367,8 @@ func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentD
 
 }
 
-func (h *Handler) deleteDirectories(c *gin.Context, directories []primitive.ObjectID) {
-	claims := auth.ExtractClaimsFromContext(c)
-	user := claims.Id
-
+// Return a map with directories in format: parent_directory: [child_directory1, child_directory2, ...]
+func (h *Handler) findAndMapDirectories(user string) map[primitive.ObjectID][]primitive.ObjectID {
 	collection := h.Db.Collection("directories")
 
 	// Get all directories with user from claims, with existing parent_directory:
@@ -396,17 +401,43 @@ func (h *Handler) deleteDirectories(c *gin.Context, directories []primitive.Obje
 		}
 	}
 
+	return dict
+}
+
+func (h *Handler) deleteDirectories(c *gin.Context, directories []PatchRequestData) {
+	directoriesToDelete := make([]primitive.ObjectID, 0)
+	directoryStringList := make([]string, 0)
+	fileDeleteQuery := make([]string, 0)
+
+	for _, directory := range directories {
+		if isValid := auth.ValidateAccessKeyWithId(directory.AccessKey, directory.DirectoryId.Hex()); !isValid {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "invalid access key for directory: " + directory.DirectoryId.Hex(),
+			})
+			return
+		}
+
+		directoriesToDelete = append(directoriesToDelete, directory.DirectoryId)
+		directoryStringList = append(directoryStringList, directory.DirectoryId.Hex())
+		fileDeleteQuery = append(fileDeleteQuery, "parent_directory = "+directory.DirectoryId.Hex())
+	}
+
+	claims := auth.ExtractClaimsFromContext(c)
+	user := claims.Id
+
+	directoryMap := h.findAndMapDirectories(user)
+
 	var directoryList []primitive.ObjectID
 
-	for _, val := range directories {
-		directoryList = append(directoryList, filterDirectories(dict, dict[val])...)
+	for _, val := range directoriesToDelete {
+		directoryList = append(directoryList, filterDirectories(directoryMap, directoryMap[val])...)
 		directoryList = append(directoryList, val)
 	}
 
 	// Remove all file documents from DB
-	collection = h.Db.Collection("files")
+	collection := h.Db.Collection("files")
 
-	_, err = collection.DeleteMany(context.TODO(), bson.D{{Key: "user", Value: claims.Id}, {Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryList}}}})
+	_, err := collection.DeleteMany(context.TODO(), bson.D{{Key: "user", Value: claims.Id}, {Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryList}}}})
 	if err != nil {
 		log.Panic(err)
 	}
@@ -426,21 +457,26 @@ func (h *Handler) deleteDirectories(c *gin.Context, directories []primitive.Obje
 		}
 	}
 
+	if _, err = h.SearchDb.Index("directories").DeleteDocuments(directoryStringList); err != nil {
+		log.Println(err)
+	}
+
+	if _, err := h.SearchDb.Index("files").DeleteDocumentsByFilter(strings.Join(fileDeleteQuery, " OR ")); err != nil {
+		log.Println(err)
+	}
+
 	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) PatchDirectories(c *gin.Context) {
 	type RequestData struct {
-		Operation   string `json:"operation"`
-		Directories []primitive.ObjectID `json:"items"`
+		Operation   string             `json:"operation"`
+		Directories []PatchRequestData `json:"items"`
 	}
 
 	var requestData RequestData
 
 	c.MustBindWith(&requestData, binding.JSON)
-
-	fmt.Println(requestData.Operation)
-	fmt.Println(requestData.Directories)
 
 	if requestData.Operation == "delete" {
 		h.deleteDirectories(c, requestData.Directories)
