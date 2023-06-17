@@ -189,6 +189,10 @@ func ValidatePermissions(accessKey, permission string) bool {
 	return helper.StringArrayContains(claims.Permissions, permission)
 }
 
+func ValidatePermissionsFromClaims(claims *FileClaims, permission string) bool{
+	return helper.StringArrayContains(claims.Permissions, permission)
+}
+
 func ValidateToken(signedToken string) (claims *SignedClaims, err error) {
 	token, err := jwt.ParseWithClaims(
 		signedToken,

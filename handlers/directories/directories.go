@@ -556,3 +556,84 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+func (h *Handler) ChangeDirectory(c *gin.Context) {
+	directoryObjectIdList := make([]primitive.ObjectID, 0)
+
+	// map in format {"_id": "directoryId", "parent_directory": "ID of destination directory"}
+	// used to contstruct search database update query
+	directoryMap := make([]map[string]interface{}, 0)
+
+	type RequestData struct {
+		Id    primitive.ObjectID `json:"id"`
+		Items []struct {
+			Id        primitive.ObjectID `json:"id"`
+			AccessKey string             `json:"access_key"`
+		}
+	}
+
+	var requestData RequestData
+
+	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
+		log.Println(err)
+	}
+
+	if requestData.Id.IsZero() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid ID",
+		})
+	}
+
+	for _, directory := range requestData.Items {
+		// Validate access key and check if this access key is for that specific directory
+		// Check if access key allows user to modify (check permissions)
+		accessKeyClaims, _ := auth.ValidateAccessKey(directory.AccessKey)
+		if accessKeyClaims.Id != directory.Id.Hex() {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid access key for directory: " + directory.Id.Hex(),
+			})
+			return
+		} else if !helper.StringArrayContains(accessKeyClaims.Permissions, auth.PermissionModify) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "no permission to delete this directory",
+			})
+			return
+		}
+
+		// Validate permissions from access key
+		isAuthorized := auth.ValidatePermissions(directory.AccessKey, auth.PermissionModify)
+		if !isAuthorized {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "no modify permission",
+			})
+			return
+		}
+
+		directoryObjectIdList = append(directoryObjectIdList, directory.Id)
+		directoryMap = append(directoryMap, map[string]interface{}{
+			"_id":              directory.Id.Hex(),
+			"parent_directory": requestData.Id.Hex(),
+		})
+	}
+
+	// Update parent directory of directories with IDs from directoryObjectIdList
+	res, err := h.Db.Collection("directories").UpdateMany(context.TODO(), bson.D{
+		{Key: "_id", Value: bson.D{
+			{Key: "$in", Value: directoryObjectIdList},
+		}},
+	}, bson.D{
+		{Key: "$set", Value: bson.D{
+			{Key: "parent_directory", Value: requestData.Id},
+		}},
+	})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	if _, err := h.SearchDb.Index("directories").UpdateDocuments(directoryMap); err != nil {
+		log.Println(err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"updated": res.ModifiedCount,
+	})
+}

@@ -20,7 +20,7 @@ import (
 )
 
 type Handler struct {
-	Db *mongo.Database
+	Db       *mongo.Database
 	SearchDb *meilisearch.Client
 }
 
@@ -109,17 +109,17 @@ func (h *Handler) Register(c *gin.Context) {
 
 	// Add to search database
 	if _, err := h.SearchDb.Index("directories").AddDocuments(&SearchDatabaseData{
-		Id:        res.InsertedIDs[0].(primitive.ObjectID).Hex(),
-		Name:      "Main",
-		User:      userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
+		Id:   res.InsertedIDs[0].(primitive.ObjectID).Hex(),
+		Name: "Main",
+		User: userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
 	}); err != nil {
 		log.Println(err)
 	}
 
 	if _, err := h.SearchDb.Index("directories").AddDocuments(&SearchDatabaseData{
-		Id:        res.InsertedIDs[1].(primitive.ObjectID).Hex(),
-		Name:      "Trash",
-		User:      userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
+		Id:   res.InsertedIDs[1].(primitive.ObjectID).Hex(),
+		Name: "Trash",
+		User: userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
 	}); err != nil {
 		log.Println(err)
 	}
