@@ -564,8 +564,9 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	directoryMap := make([]map[string]interface{}, 0)
 
 	type RequestData struct {
-		Id    primitive.ObjectID `json:"id"`
-		Items []struct {
+		Id        primitive.ObjectID `json:"id"`
+		AccessKey string             `json:"access_key"`
+		Items     []struct {
 			Id        primitive.ObjectID `json:"id"`
 			AccessKey string             `json:"access_key"`
 		}
@@ -577,33 +578,27 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		log.Println(err)
 	}
 
-	if requestData.Id.IsZero() {
+	// Validate access key and check if the access key is for that specific directory
+	directoryClaims, valid := auth.ValidateAccessKey(requestData.AccessKey)
+	if !valid || directoryClaims.Id != requestData.Id.Hex() {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid ID",
+			"error": "invalid access key for directory: " + requestData.Id.Hex(),
 		})
+		return
 	}
-
+	
+	// Validate each file and add them to directoryMap and directoryObjectIdList
 	for _, directory := range requestData.Items {
 		// Validate access key and check if this access key is for that specific directory
 		// Check if access key allows user to modify (check permissions)
-		accessKeyClaims, _ := auth.ValidateAccessKey(directory.AccessKey)
-		if accessKeyClaims.Id != directory.Id.Hex() {
+		if accessKeyClaims, valid := auth.ValidateAccessKey(directory.AccessKey); !valid || accessKeyClaims.Id != directory.Id.Hex() {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "invalid access key for directory: " + directory.Id.Hex(),
 			})
 			return
-		} else if !helper.StringArrayContains(accessKeyClaims.Permissions, auth.PermissionModify) {
+		} else if !auth.ValidatePermissionsFromClaims(accessKeyClaims, auth.PermissionModify) {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "no permission to delete this directory",
-			})
-			return
-		}
-
-		// Validate permissions from access key
-		isAuthorized := auth.ValidatePermissions(directory.AccessKey, auth.PermissionModify)
-		if !isAuthorized {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "no modify permission",
+				"error": "no permission to modify this directory",
 			})
 			return
 		}
@@ -629,6 +624,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		log.Panic(err)
 	}
 
+	// Update search database
 	if _, err := h.SearchDb.Index("directories").UpdateDocuments(directoryMap); err != nil {
 		log.Println(err)
 	}
