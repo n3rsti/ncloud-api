@@ -3,13 +3,6 @@ package files
 import (
 	"context"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
-	"github.com/meilisearch/meilisearch-go"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"mime/multipart"
 	"ncloud-api/handlers/search"
@@ -17,6 +10,14 @@ import (
 	"ncloud-api/models"
 	"net/http"
 	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/meilisearch/meilisearch-go"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const UploadDestination = "/var/ncloud_upload/"
@@ -392,4 +393,101 @@ func (h *Handler) DeleteFiles(c *gin.Context) {
 		"deleted": result.DeletedCount,
 	})
 
+}
+
+func (h *Handler) ChangeDirectory(c *gin.Context) {
+	// List of operations because we want to update all files at once instead of query for each directory with files
+	// Usually it will be update for files from 1 directory, but we allow possibility of need to move many files from many directories
+	// for example when we want to move all files matching specific query (e.g name)
+	var operations []mongo.WriteModel
+
+	// List of maps in format {"_id": "ID of file we want to move", "parent_directory": "ID of directory we want to move the file into"}
+	// Used for search database update
+	filesMap := make([]map[string]interface{}, 0)
+
+	type RequestData struct {
+		Id          primitive.ObjectID `json:"id"`
+		AccessKey   string             `json:"access_key"`
+		Directories []struct {
+			Id        primitive.ObjectID   `json:"id"`
+			AccessKey string               `json:"access_key"`
+			Files     []primitive.ObjectID `json:"files"`
+		} `json:"directories"`
+	}
+
+	var requestData RequestData
+
+	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
+		log.Println(err)
+	}
+
+	// Check if destination directory access key is valid and matches destination directory ID
+	if directoryClaims, valid := auth.ValidateAccessKey(requestData.AccessKey); !valid || directoryClaims.Id != requestData.Id.Hex() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid access key for directory: " + requestData.Id.Hex(),
+		})
+		return
+	}
+
+	for _, directory := range requestData.Directories {
+		// Check if directory access key is valid and matches directory ID
+		if accessKeyClaims, valid := auth.ValidateAccessKey(directory.AccessKey); !valid || accessKeyClaims.Id != directory.Id.Hex() {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid access key for directory: " + directory.Id.Hex(),
+			})
+			return
+		}
+
+		dbOperation := mongo.NewUpdateManyModel()
+		// Files from list in request body AND having parent_directory as directory ID from list
+		// This removes possibility of user providing valid access key, but for different directory and trying to modify file without access to it
+		dbOperation.SetFilter(bson.M{
+			"_id": bson.M{
+				"$in": directory.Files,
+			},
+			"parent_directory": directory.Id,
+		},
+		)
+
+		dbOperation.SetUpdate(bson.M{
+			"$set": bson.M{
+				"parent_directory": requestData.Id,
+			},
+		})
+
+		operations = append(operations, dbOperation)
+
+		for _, file := range directory.Files {
+			filesMap = append(filesMap, map[string]interface{}{
+				"_id":              file.Hex(),
+				"parent_directory": requestData.Id.Hex(),
+			})
+
+			// move file to destination directory
+			if err := os.Rename(
+				UploadDestination+directory.Id.Hex()+"/"+file.Hex(),
+				UploadDestination+requestData.Id.Hex()+"/"+file.Hex(),
+			); err != nil {
+				log.Panic(err)
+			}
+		}
+
+	}
+
+	// update primary database
+	res, err := h.Db.Collection("files").BulkWrite(context.TODO(), operations)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	// update search database
+	if response, err := h.SearchDb.Index("files").UpdateDocuments(filesMap); err != nil {
+		log.Println(err)
+	} else {
+		log.Println(response)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"updated": res.ModifiedCount,
+	})
 }
