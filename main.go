@@ -131,7 +131,9 @@ func main() {
 		APIKey: MeiliApiKey,
 	})
 
-	//initMeiliSearch(db, meiliClient)
+	// meiliClient.Index("files").DeleteAllDocuments()
+	// meiliClient.Index("directories").DeleteAllDocuments();
+	// initMeiliSearch(db, meiliClient)
 
 	// Handlers
 	userHandler := user.Handler{Db: db, SearchDb: meiliClient}

@@ -557,6 +557,7 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 func (h *Handler) ChangeDirectory(c *gin.Context) {
+	var operations []mongo.WriteModel
 	directoryObjectIdList := make([]primitive.ObjectID, 0)
 
 	// map in format {"_id": "directoryId", "parent_directory": "ID of destination directory"}
@@ -567,8 +568,9 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		Id        primitive.ObjectID `json:"id"`
 		AccessKey string             `json:"access_key"`
 		Items     []struct {
-			Id        primitive.ObjectID `json:"id"`
-			AccessKey string             `json:"access_key"`
+			Id              primitive.ObjectID `json:"id"`
+			AccessKey       string             `json:"access_key"`
+			ParentDirectory primitive.ObjectID `json:"parent_directory"` // this is optional, this value will be set as previous_parent_directory, useful for restoring from trash
 		}
 	}
 
@@ -586,7 +588,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Validate each file and add them to directoryMap and directoryObjectIdList
 	for _, directory := range requestData.Items {
 		// Validate access key and check if this access key is for that specific directory
@@ -603,23 +605,57 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 			return
 		}
 
-		directoryObjectIdList = append(directoryObjectIdList, directory.Id)
 		directoryMap = append(directoryMap, map[string]interface{}{
 			"_id":              directory.Id.Hex(),
 			"parent_directory": requestData.Id.Hex(),
 		})
+
+		// If there is no value to set as previous_parent_directory, add directory ID to UpdateMany operation list
+		// Else add UpdateOne operation and set parent_directory as previous_parent_directory (use for trash)
+		if directory.ParentDirectory.IsZero() {
+			directoryObjectIdList = append(directoryObjectIdList, directory.Id)
+
+		} else {
+			dbOperation := mongo.NewUpdateOneModel()
+			// Directories from list in request body AND having parent_directory as directory ID from list
+			// This removes possibility of user providing invalid parent directory
+			dbOperation.SetFilter(bson.M{
+				"_id":              directory.Id,
+				"parent_directory": directory.ParentDirectory,
+			})
+
+			dbOperation.SetUpdate(bson.M{
+				"$set": bson.M{
+					"parent_directory":          requestData.Id,
+					"previous_parent_directory": directory.ParentDirectory,
+				},
+			})
+
+			operations = append(operations, dbOperation)
+		}
+
+	}
+
+	if len(directoryObjectIdList) > 0 {
+		updateOperation := mongo.NewUpdateManyModel()
+
+		updateOperation.SetFilter(bson.D{
+			{Key: "_id", Value: bson.D{
+				{Key: "$in", Value: directoryObjectIdList},
+			}},
+		})
+
+		updateOperation.SetUpdate(bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "parent_directory", Value: requestData.Id},
+			}},
+		})
+
+		operations = append(operations, updateOperation)
 	}
 
 	// Update parent directory of directories with IDs from directoryObjectIdList
-	res, err := h.Db.Collection("directories").UpdateMany(context.TODO(), bson.D{
-		{Key: "_id", Value: bson.D{
-			{Key: "$in", Value: directoryObjectIdList},
-		}},
-	}, bson.D{
-		{Key: "$set", Value: bson.D{
-			{Key: "parent_directory", Value: requestData.Id},
-		}},
-	})
+	res, err := h.Db.Collection("directories").BulkWrite(context.TODO(), operations)
 	if err != nil {
 		log.Panic(err)
 	}
