@@ -152,7 +152,6 @@ func main() {
 	router.GET("/api/token/refresh", userHandler.RefreshToken)
 	router.POST("/api/files/delete", fileHandler.DeleteFiles)
 	router.POST("/api/files/move", fileHandler.ChangeDirectory)
-	router.POST("/api/directories/move", directoryHandler.ChangeDirectory)
 
 	router.MaxMultipartMemory = 8 << 20 // 8 MiB
 
@@ -164,6 +163,7 @@ func main() {
 		authorized.GET("/api/directories", directoryHandler.GetDirectoryWithFiles)
 		authorized.GET("/api/directories/:id", directoryHandler.GetDirectoryWithFiles)
 		authorized.POST("/api/directories/delete", directoryHandler.DeleteDirectories)
+		authorized.POST("/api/directories/move", directoryHandler.ChangeDirectory)
 
 		directoryGroup := authorized.Group("/api/")
 		directoryGroup.Use(auth.DirectoryAuth())

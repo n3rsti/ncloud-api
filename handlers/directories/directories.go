@@ -352,7 +352,7 @@ Return:
 
 	[dir1, dir2, dir3, ..., dir9]
 */
-func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentDirectory []primitive.ObjectID) []primitive.ObjectID {
+func FilterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentDirectory []primitive.ObjectID) []primitive.ObjectID {
 	var allDirectories []primitive.ObjectID
 
 	for _, childDirectory := range parentDirectory {
@@ -360,7 +360,7 @@ func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentD
 		allDirectories = append(allDirectories, childDirectory)
 
 		// append directory children
-		allDirectories = append(allDirectories, filterDirectories(data, data[childDirectory])...)
+		allDirectories = append(allDirectories, FilterDirectories(data, data[childDirectory])...)
 	}
 
 	return allDirectories
@@ -368,7 +368,7 @@ func filterDirectories(data map[primitive.ObjectID][]primitive.ObjectID, parentD
 }
 
 // Return a map with directories in format: parent_directory: [child_directory1, child_directory2, ...]
-func (h *Handler) findAndMapDirectories(user string) map[primitive.ObjectID][]primitive.ObjectID {
+func (h *Handler) FindAndMapDirectories(user string) map[primitive.ObjectID][]primitive.ObjectID {
 	collection := h.Db.Collection("directories")
 
 	// Get all directories with user from claims, with existing parent_directory:
@@ -435,12 +435,12 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 	claims := auth.ExtractClaimsFromContext(c)
 	user := claims.Id
 
-	directoryMap := h.findAndMapDirectories(user)
+	directoryMap := h.FindAndMapDirectories(user)
 
 	var directoryList []primitive.ObjectID
 
 	for _, val := range directoriesToDelete {
-		directoryList = append(directoryList, filterDirectories(directoryMap, directoryMap[val])...)
+		directoryList = append(directoryList, FilterDirectories(directoryMap, directoryMap[val])...)
 		directoryList = append(directoryList, val)
 	}
 
@@ -528,7 +528,7 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 	dirIdObjectId, _ := primitive.ObjectIDFromHex(directoryId)
 
 	// Create list of directories to delete: directory to delete and all directories inside
-	directoryList := filterDirectories(dict, dict[dirIdObjectId])
+	directoryList := FilterDirectories(dict, dict[dirIdObjectId])
 	directoryList = append(directoryList, dirIdObjectId)
 
 	// Remove all file documents from DB
@@ -564,6 +564,9 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	// used to contstruct search database update query
 	directoryMap := make([]map[string]interface{}, 0)
 
+	claims := auth.ExtractClaimsFromContext(c)
+	directoryTree := h.FindAndMapDirectories(claims.Id)
+
 	type RequestData struct {
 		Id        primitive.ObjectID `json:"id"`
 		AccessKey string             `json:"access_key"`
@@ -593,6 +596,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	for _, directory := range requestData.Items {
 		// Validate access key and check if this access key is for that specific directory
 		// Check if access key allows user to modify (check permissions)
+		// Check if destinaion folder is not in source folder (can't move directory to itself)
 		if accessKeyClaims, valid := auth.ValidateAccessKey(directory.AccessKey); !valid || accessKeyClaims.Id != directory.Id.Hex() {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "invalid access key for directory: " + directory.Id.Hex(),
@@ -601,6 +605,11 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		} else if !auth.ValidatePermissionsFromClaims(accessKeyClaims, auth.PermissionModify) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "no permission to modify this directory",
+			})
+			return
+		} else if helper.ObjectIArrayContains(FilterDirectories(directoryTree, directoryTree[directory.Id]), requestData.Id) || directory.Id == requestData.Id {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "cannot move directory " + directory.Id.Hex() + " to itself",
 			})
 			return
 		}
