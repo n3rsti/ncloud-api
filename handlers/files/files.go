@@ -446,7 +446,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 			}
 
 			dbOperation := mongo.NewUpdateOneModel()
-			// Files from list in request body AND having parent_directory as directory ID from list
+			// File from list in request body AND having parent_directory as directory ID from list
 			// This removes possibility of user providing valid access key, but for different directory and trying to modify file without access to it
 			dbOperation.SetFilter(bson.M{
 				"_id": file,
