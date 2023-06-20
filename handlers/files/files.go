@@ -214,7 +214,6 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 	claims := auth.ExtractClaimsFromContext(c)
 	// Bind request body to File model
 	var file models.File
-	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
 
 	if err := c.MustBindWith(&file, binding.JSON); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -231,66 +230,11 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 	}
 
 	// These values can't be modified
-	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" || file.AccessKey != "" {
+	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" || file.AccessKey != "" || !file.ParentDirectory.IsZero() || !file.PreviousParentDirectory.IsZero() {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "attempt to modify restricted fields",
 		})
 		return
-	}
-
-	// Verify new parent directory access key (if user wants to change it)
-	if !file.ParentDirectory.IsZero() && c.GetHeader("DirectoryAccessKey") != "" {
-		parentDirectoryAccessKey := c.GetHeader("DirectoryAccessKey")
-
-		_, validAccessKey := auth.ValidateAccessKey(parentDirectoryAccessKey)
-
-		if !validAccessKey {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "invalid directory access key",
-			})
-			return
-		}
-	} else if !file.ParentDirectory.IsZero() && c.GetHeader("DirectoryAccessKey") == "" {
-		// If user don't provide directory access key, we perform database check for directory ownership
-		var result bson.M
-
-		directoryCollection := h.Db.Collection("directories")
-		err := directoryCollection.FindOne(c, bson.D{{Key: "_id", Value: file.ParentDirectory}}).Decode(&result)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "new parent directory not found",
-			})
-
-			return
-		}
-
-		if result["user"] != claims.Id {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "no access to new parent directory",
-			})
-			return
-		}
-
-	}
-
-	// If parentDirectory is changed, move file to a new parentDirectory on disk
-	if !file.ParentDirectory.IsZero() {
-		if err := os.Rename(
-			UploadDestination+fileAccessKey.ParentDirectory+"/"+fileAccessKey.Id,
-			UploadDestination+file.ParentDirectory.Hex()+"/"+fileAccessKey.Id,
-		); err != nil {
-			log.Panic(err)
-		}
-
-		// Update access key: copy previous access key, but replace parentDirectory with a new one
-		updatedAccessKey, err := auth.GenerateFileAccessKey(fileAccessKey.Id, fileAccessKey.Permissions, file.ParentDirectory.Hex())
-		if err != nil {
-			log.Print(err)
-			c.Status(http.StatusInternalServerError)
-			return
-		}
-
-		file.AccessKey = updatedAccessKey
 	}
 
 	// Update file record
@@ -310,19 +254,10 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		return
 	}
 
-	// Update search database
-	var parentDirectory string
-	if file.ParentDirectory.IsZero() {
-		parentDirectory = ""
-	} else {
-		parentDirectory = file.ParentDirectory.Hex()
-	}
-
 	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
-		Id:        fileId,
-		Name:      file.Name,
-		Directory: parentDirectory,
-		User:      claims.Id,
+		Id:   fileId,
+		Name: file.Name,
+		User: claims.Id,
 	})
 
 	c.Status(http.StatusNoContent)
@@ -449,15 +384,16 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 			// File from list in request body AND having parent_directory as directory ID from list
 			// This removes possibility of user providing valid access key, but for different directory and trying to modify file without access to it
 			dbOperation.SetFilter(bson.M{
-				"_id": file,
+				"_id":              file,
 				"parent_directory": directory.Id,
 			},
 			)
 
 			dbOperation.SetUpdate(bson.M{
 				"$set": bson.M{
-					"parent_directory": requestData.Id,
-					"access_key": accessKey,
+					"parent_directory":          requestData.Id,
+					"access_key":                accessKey,
+					"previous_parent_directory": directory.Id,
 				},
 			})
 
@@ -490,6 +426,99 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		log.Println(err)
 	} else {
 		log.Println(response)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"updated": res.ModifiedCount,
+	})
+}
+
+func (h *Handler) RestoreFiles(c *gin.Context) {
+	claims := auth.ExtractClaimsFromContext(c)
+	// List for search db update operation
+	searchDbList := make([]map[string]interface{}, 0)
+
+	type RequestData struct {
+		Files []primitive.ObjectID `json:"files"`
+	}
+
+	var requestData RequestData
+
+	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "bad request format",
+		})
+	}
+
+	var dbResult []bson.M
+
+	// Find files from request body list
+	cursor, err := h.Db.Collection("files").Find(context.TODO(), bson.M{"_id": bson.M{"$in": requestData.Files}})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	// Map results to bson.M format
+	if err = cursor.All(context.TODO(), &dbResult); err != nil {
+		log.Panic(err)
+	}
+
+	var operations []mongo.WriteModel
+
+	for _, file := range dbResult {
+		// Check if user is the owner of the file
+		if file["user"].(string) != claims.Id {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "no access for file: " + file["_id"].(primitive.ObjectID).Hex(),
+			})
+
+		}
+
+		// Check if previous parent directory isn't empty
+		if !file["previous_parent_directory"].(primitive.ObjectID).IsZero() {
+			// Create new access token
+			accessKey, err := auth.GenerateFileAccessKey(file["_id"].(primitive.ObjectID).Hex(), auth.AllFilePermissions, file["previous_parent_directory"].(primitive.ObjectID).Hex())
+			if err != nil {
+				log.Panic(err)
+			}
+
+			operation := mongo.NewUpdateOneModel()
+			operation.SetFilter(bson.M{"_id": file["_id"]})
+			operation.SetUpdate(bson.M{
+				"$set": bson.M{
+					"parent_directory":          file["previous_parent_directory"],
+					"previous_parent_directory": "",
+					"access_key":                accessKey,
+				},
+			})
+
+			operations = append(operations, operation)
+
+			searchDbList = append(searchDbList, map[string]interface{}{
+				"_id":              file["_id"].(primitive.ObjectID).Hex(),
+				"parent_directory": file["previous_parent_directory"].(primitive.ObjectID).Hex(),
+			})
+		}
+	}
+
+	res, err := h.Db.Collection("files").BulkWrite(context.TODO(), operations)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	// Move on disk
+	for _, file := range dbResult {
+		if err := os.Rename(
+			UploadDestination+file["parent_directory"].(primitive.ObjectID).Hex()+"/"+file["_id"].(primitive.ObjectID).Hex(),
+			UploadDestination+file["previous_parent_directory"].(primitive.ObjectID).Hex()+"/"+file["_id"].(primitive.ObjectID).Hex(),
+		); err != nil {
+			log.Println(err)
+		}
+	}
+
+	// Update search database
+	if _, err := h.SearchDb.Index("files").UpdateDocuments(searchDbList); err != nil {
+		log.Println(err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{

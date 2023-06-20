@@ -520,7 +520,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	directoryObjectIdList := make([]primitive.ObjectID, 0)
 
 	// map in format {"_id": "directoryId", "parent_directory": "ID of destination directory"}
-	// used to contstruct search database update query
+	// used to construct search database update query
 	directoryMap := make([]map[string]interface{}, 0)
 
 	claims := auth.ExtractClaimsFromContext(c)
@@ -555,7 +555,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	for _, directory := range requestData.Items {
 		// Validate access key and check if this access key is for that specific directory
 		// Check if access key allows user to modify (check permissions)
-		// Check if destinaion folder is not in source folder (can't move directory to itself)
+		// Check if destination folder is not in source folder (can't move directory to itself)
 		if accessKeyClaims, valid := auth.ValidateAccessKey(directory.AccessKey); !valid || accessKeyClaims.Id != directory.Id.Hex() {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "invalid access key for directory: " + directory.Id.Hex(),
@@ -640,6 +640,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 func (h *Handler) RestoreDirectories(c *gin.Context) {
 	claims := auth.ExtractClaimsFromContext(c)
+	// List for search db update operation
 	searchDbList := make([]map[string]interface{}, 0)
 
 	type RequestData struct {
@@ -669,7 +670,7 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 	var operations []mongo.WriteModel
 
 	for _, directory := range dbResult {
-		// Check if user is the owner of directories
+		// Check if user is the owner of the directory
 		if directory["user"].(string) != claims.Id {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "no access for directory: " + directory["_id"].(primitive.ObjectID).Hex(),
@@ -702,6 +703,7 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 		log.Panic(err)
 	}
 
+	// Update search database
 	if _, err := h.SearchDb.Index("directories").UpdateDocuments(searchDbList); err != nil {
 		log.Println(err)
 	}
