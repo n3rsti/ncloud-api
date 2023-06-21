@@ -26,6 +26,7 @@ var DbPassword string
 var DbUser string
 var DbName string
 var MeiliApiKey string
+var MeiliHost string
 
 func health(c *gin.Context) {
 	c.JSON(http.StatusOK, map[string]string{"ok": "true"})
@@ -108,6 +109,7 @@ func main() {
 	DbUser = helper.GetEnv("DB_USER", "rootuser")
 	DbName = helper.GetEnv("DB_NAME", "ncloud-api")
 	MeiliApiKey = helper.GetEnv("MEILI_MASTER_KEY", "meili_master_key")
+	MeiliHost = helper.GetEnv("MEILI_HOST", "http://localhost:7700")
 
 	client, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
 	if err != nil {
@@ -127,7 +129,7 @@ func main() {
 
 	// meilisearch setup
 	meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
-		Host:   "http://localhost:7700",
+		Host:   MeiliHost,
 		APIKey: MeiliApiKey,
 	})
 
