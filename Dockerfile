@@ -14,5 +14,6 @@ RUN go install ncloud-api
 
 CMD ["/go/bin/ncloud-api"]
 
+EXPOSE 80
 
-EXPOSE 8080
+EXPOSE 443
