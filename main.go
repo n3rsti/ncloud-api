@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/gin-gonic/autotls"
+	"golang.org/x/crypto/acme/autocert"
 	"log"
 	"ncloud-api/handlers/directories"
 	"ncloud-api/handlers/files"
@@ -28,6 +29,7 @@ var DbUser string
 var DbName string
 var MeiliApiKey string
 var MeiliHost string
+var Mode string
 
 func health(c *gin.Context) {
 	c.JSON(http.StatusOK, map[string]string{"ok": "true"})
@@ -118,6 +120,7 @@ func main() {
 	DbName = helper.GetEnv("DB_NAME", "ncloud-api")
 	MeiliApiKey = helper.GetEnv("MEILI_MASTER_KEY", "meili_master_key")
 	MeiliHost = helper.GetEnv("MEILI_HOST", "http://localhost:7700")
+	Mode = helper.GetEnv("RUN_MODE", "debug")
 
 	mongoClient, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
 	if err != nil {
@@ -146,7 +149,7 @@ func main() {
 	directoryHandler := directories.Handler{Db: db, SearchDb: meiliClient}
 	searchHandler := search.Handler{Db: meiliClient}
 
-	gin.SetMode(gin.DebugMode)
+	gin.SetMode(Mode)
 	router := gin.Default()
 
 	router.Use(cors.Middleware())
@@ -193,7 +196,11 @@ func main() {
 	}
 
 	if gin.Mode() == gin.ReleaseMode {
-		log.Fatal(autotls.Run(router, "api.ncloudapp.com"))
+		m := autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			HostPolicy: autocert.HostWhitelist("api.ncloudapp.com"),
+		}
+		log.Fatal(autotls.RunWithManager(router, &m))
 	} else {
 		router.Run("0.0.0.0:8080")
 	}
