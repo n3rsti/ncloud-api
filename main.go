@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/gin-gonic/autotls"
 	"log"
 	"ncloud-api/handlers/directories"
 	"ncloud-api/handlers/files"
@@ -34,6 +35,13 @@ func health(c *gin.Context) {
 
 // Run if you need to sync meilisearch with primary database
 func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
+	if r, err := meiliClient.Index("files").DeleteAllDocuments(); err != nil {
+		log.Panic(r, err)
+	}
+	if r, err := meiliClient.Index("directories").DeleteAllDocuments(); err != nil {
+		log.Panic(r, err)
+	}
+
 	filterableAttributes := []string{
 		"name",
 		"_id",
@@ -111,7 +119,7 @@ func main() {
 	MeiliApiKey = helper.GetEnv("MEILI_MASTER_KEY", "meili_master_key")
 	MeiliHost = helper.GetEnv("MEILI_HOST", "http://localhost:7700")
 
-	client, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
+	mongoClient, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -119,31 +127,26 @@ func main() {
 
 	defer cancel()
 
-	err = client.Connect(ctx)
+	err = mongoClient.Connect(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Disconnect(ctx)
+	defer mongoClient.Disconnect(ctx)
 
-	db := client.Database(DbName)
-
-	// meilisearch setup
 	meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
 		Host:   MeiliHost,
 		APIKey: MeiliApiKey,
 	})
 
-	// meiliClient.Index("files").DeleteAllDocuments()
-	// meiliClient.Index("directories").DeleteAllDocuments();
-	// initMeiliSearch(db, meiliClient)
+	db := mongoClient.Database(DbName)
+	initMeiliSearch(db, meiliClient)
 
-	// Handlers
 	userHandler := user.Handler{Db: db, SearchDb: meiliClient}
 	fileHandler := files.Handler{Db: db, SearchDb: meiliClient}
 	directoryHandler := directories.Handler{Db: db, SearchDb: meiliClient}
 	searchHandler := search.Handler{Db: meiliClient}
 
-	// Setup router
+	gin.SetMode(gin.DebugMode)
 	router := gin.Default()
 
 	router.Use(cors.Middleware())
@@ -189,5 +192,10 @@ func main() {
 
 	}
 
-	router.Run("localhost:8080")
+	if gin.Mode() == gin.ReleaseMode {
+		log.Fatal(autotls.Run(router, "api.ncloudapp.com"))
+	} else {
+		router.Run("0.0.0.0:8080")
+	}
+
 }
