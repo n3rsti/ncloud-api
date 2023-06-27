@@ -284,7 +284,7 @@ func (h *Handler) DeleteFiles(c *gin.Context) {
 		log.Println(err)
 	}
 
-	deleteQuery := make([]bson.D, 0)
+	deleteQuery := make([]bson.D, 0, len(data))
 	filesToDelete := make([]string, 0)
 
 	for _, directory := range data {
@@ -338,7 +338,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 	// List of maps in format {"_id": "ID of file we want to move", "parent_directory": "ID of directory we want to move the file into"}
 	// Used for search database update
-	filesMap := make([]map[string]interface{}, 0)
+	searchDbFileList := make([]map[string]interface{}, 0)
 
 	type RequestData struct {
 		Id          primitive.ObjectID `json:"id"`
@@ -399,7 +399,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 			operations = append(operations, dbOperation)
 
-			filesMap = append(filesMap, map[string]interface{}{
+			searchDbFileList = append(searchDbFileList, map[string]interface{}{
 				"_id":              file.Hex(),
 				"parent_directory": requestData.Id.Hex(),
 			})
@@ -422,7 +422,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	}
 
 	// update search database
-	if response, err := h.SearchDb.Index("files").UpdateDocuments(filesMap); err != nil {
+	if response, err := h.SearchDb.Index("files").UpdateDocuments(searchDbFileList); err != nil {
 		log.Println(err)
 	} else {
 		log.Println(response)
@@ -434,9 +434,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 }
 
 func (h *Handler) RestoreFiles(c *gin.Context) {
-	claims := auth.ExtractClaimsFromContext(c)
-	// List for search db update operation
-	searchDbList := make([]map[string]interface{}, 0)
+	userClaims := auth.ExtractClaimsFromContext(c)
 
 	type RequestData struct {
 		Files []primitive.ObjectID `json:"files"`
@@ -450,7 +448,10 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 		})
 	}
 
-	var dbResult []bson.M
+	// List for search db update operation
+	searchDbQueryList := make([]map[string]interface{}, 0, len(requestData.Files))
+
+	dbResult := make([]bson.M, 0, len(requestData.Files))
 
 	// Find files from request body list
 	cursor, err := h.Db.Collection("files").Find(context.TODO(), bson.M{"_id": bson.M{"$in": requestData.Files}})
@@ -463,11 +464,11 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 		log.Panic(err)
 	}
 
-	var operations []mongo.WriteModel
+	dbUpdateOperations := make([]mongo.WriteModel, 0, len(requestData.Files))
 
 	for _, file := range dbResult {
 		// Check if user is the owner of the file
-		if file["user"].(string) != claims.Id {
+		if file["user"].(string) != userClaims.Id {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "no access for file: " + file["_id"].(primitive.ObjectID).Hex(),
 			})
@@ -492,16 +493,16 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 				},
 			})
 
-			operations = append(operations, operation)
+			dbUpdateOperations = append(dbUpdateOperations, operation)
 
-			searchDbList = append(searchDbList, map[string]interface{}{
+			searchDbQueryList = append(searchDbQueryList, map[string]interface{}{
 				"_id":              file["_id"].(primitive.ObjectID).Hex(),
 				"parent_directory": file["previous_parent_directory"].(primitive.ObjectID).Hex(),
 			})
 		}
 	}
 
-	res, err := h.Db.Collection("files").BulkWrite(context.TODO(), operations)
+	res, err := h.Db.Collection("files").BulkWrite(context.TODO(), dbUpdateOperations)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -517,7 +518,7 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 	}
 
 	// Update search database
-	if _, err := h.SearchDb.Index("files").UpdateDocuments(searchDbList); err != nil {
+	if _, err := h.SearchDb.Index("files").UpdateDocuments(searchDbQueryList); err != nil {
 		log.Println(err)
 	}
 

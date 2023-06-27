@@ -374,9 +374,9 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 		fmt.Println(err)
 	}
 
-	directoriesToDelete := make([]primitive.ObjectID, 0)
-	directoryStringList := make([]string, 0)
-	fileDeleteQuery := make([]string, 0)
+	directoriesToDelete := make([]primitive.ObjectID, 0, len(directories))
+	directoryStringList := make([]string, 0, len(directories))
+	fileDeleteQuery := make([]string, 0, len(directories))
 
 	for _, directory := range directories {
 		if isValid := auth.ValidateAccessKeyWithId(directory.AccessKey, directory.Id.Hex()); !isValid {
@@ -515,13 +515,32 @@ func (h *Handler) DeleteDirectory(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+func validateDirectory(c *gin.Context, accessKey string, directoryId primitive.ObjectID, directoryToMove primitive.ObjectID, directoryTree map[primitive.ObjectID][]primitive.ObjectID) bool {
+	// Validate access key and check if this access key is for that specific directory
+	// Check if access key allows user to modify (check permissions)
+	// Check if destination folder is not in source folder (can't move directory to itself)
+	if accessKeyClaims, valid := auth.ValidateAccessKey(accessKey); !valid || accessKeyClaims.Id != directoryId.Hex() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid access key for directory: " + directoryId.Hex(),
+		})
+		return false
+	} else if !auth.ValidatePermissionsFromClaims(accessKeyClaims, auth.PermissionModify) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "no permission to modify this directory",
+		})
+		return false
+	} else if helper.ObjectIArrayContains(FilterDirectories(directoryTree, directoryTree[directoryId]), directoryToMove) || directoryId == directoryToMove {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "cannot move directory " + directoryId.Hex() + " to itself",
+		})
+		return false
+	}
+	return true
+}
+
 func (h *Handler) ChangeDirectory(c *gin.Context) {
 	var operations []mongo.WriteModel
-	directoryObjectIdList := make([]primitive.ObjectID, 0)
-
-	// map in format {"_id": "directoryId", "parent_directory": "ID of destination directory"}
-	// used to construct search database update query
-	directoryMap := make([]map[string]interface{}, 0)
 
 	claims := auth.ExtractClaimsFromContext(c)
 	directoryTree := h.FindAndMapDirectories(claims.Id)
@@ -551,39 +570,25 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		return
 	}
 
-	// Validate each file and add them to directoryMap and directoryObjectIdList
+	// map in format {"_id": "directoryId", "parent_directory": "ID of destination directory"}
+	// used to construct search database update query
+	searchDbQueryList := make([]map[string]interface{}, 0, len(requestData.Items))
+
+	directoryObjectIdList := make([]primitive.ObjectID, 0, len(requestData.Items))
+
+	// Validate each file and add them to searchDbQueryList and directoryObjectIdList
 	for _, directory := range requestData.Items {
-		// Validate access key and check if this access key is for that specific directory
-		// Check if access key allows user to modify (check permissions)
-		// Check if destination folder is not in source folder (can't move directory to itself)
-		if accessKeyClaims, valid := auth.ValidateAccessKey(directory.AccessKey); !valid || accessKeyClaims.Id != directory.Id.Hex() {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid access key for directory: " + directory.Id.Hex(),
-			})
-			return
-		} else if !auth.ValidatePermissionsFromClaims(accessKeyClaims, auth.PermissionModify) {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "no permission to modify this directory",
-			})
-			return
-		} else if helper.ObjectIArrayContains(FilterDirectories(directoryTree, directoryTree[directory.Id]), requestData.Id) || directory.Id == requestData.Id {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "cannot move directory " + directory.Id.Hex() + " to itself",
-			})
+		if isValidDirectory := validateDirectory(c, directory.AccessKey, directory.Id, requestData.Id, directoryTree); !isValidDirectory {
 			return
 		}
 
-		directoryMap = append(directoryMap, map[string]interface{}{
+		searchDbQueryList = append(searchDbQueryList, map[string]interface{}{
 			"_id":              directory.Id.Hex(),
 			"parent_directory": requestData.Id.Hex(),
 		})
 
-		// If there is no value to set as previous_parent_directory, add directory ID to UpdateMany operation list
-		// Else add UpdateOne operation and set parent_directory as previous_parent_directory (use for trash)
-		if directory.ParentDirectory.IsZero() {
-			directoryObjectIdList = append(directoryObjectIdList, directory.Id)
-
-		} else {
+		// Set parentDirectory value if it's provided in RequestData
+		if !directory.ParentDirectory.IsZero() {
 			dbOperation := mongo.NewUpdateOneModel()
 			// Directories from list in request body AND having parent_directory as directory ID from list
 			// This removes possibility of user providing invalid parent directory
@@ -600,6 +605,8 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 			})
 
 			operations = append(operations, dbOperation)
+		} else {
+			directoryObjectIdList = append(directoryObjectIdList, directory.Id)
 		}
 
 	}
@@ -622,14 +629,12 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		operations = append(operations, updateOperation)
 	}
 
-	// Update parent directory of directories with IDs from directoryObjectIdList
 	res, err := h.Db.Collection("directories").BulkWrite(context.TODO(), operations)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// Update search database
-	if _, err := h.SearchDb.Index("directories").UpdateDocuments(directoryMap); err != nil {
+	if _, err := h.SearchDb.Index("directories").UpdateDocuments(searchDbQueryList); err != nil {
 		log.Println(err)
 	}
 
@@ -639,9 +644,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 }
 
 func (h *Handler) RestoreDirectories(c *gin.Context) {
-	claims := auth.ExtractClaimsFromContext(c)
-	// List for search db update operation
-	searchDbList := make([]map[string]interface{}, 0)
+	userClaims := auth.ExtractClaimsFromContext(c)
 
 	type RequestData struct {
 		Directories []primitive.ObjectID `json:"directories"`
@@ -655,29 +658,29 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 		})
 	}
 
-	var dbResult []bson.M
+	// List for search db update operation
+	searchDbQueryList := make([]map[string]interface{}, 0, len(requestData.Directories))
 
-	// Find directories from request body list
+	dbFindResult := make([]bson.M, 0, len(requestData.Directories))
+
 	cursor, err := h.Db.Collection("directories").Find(context.TODO(), bson.M{"_id": bson.M{"$in": requestData.Directories}})
 	if err != nil {
 		log.Panic(err)
 	}
 
-	if err = cursor.All(context.TODO(), &dbResult); err != nil {
+	if err = cursor.All(context.TODO(), &dbFindResult); err != nil {
 		log.Panic(err)
 	}
 
-	var operations []mongo.WriteModel
+	var dbUpdateOperations []mongo.WriteModel
 
-	for _, directory := range dbResult {
-		// Check if user is the owner of the directory
-		if directory["user"].(string) != claims.Id {
+	for _, directory := range dbFindResult {
+		if directory["user"].(string) != userClaims.Id {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "no access for directory: " + directory["_id"].(primitive.ObjectID).Hex(),
 			})
 		}
 
-		// Check if previous parent directory isn't empty
 		if !directory["previous_parent_directory"].(primitive.ObjectID).IsZero() {
 			dbOperation := mongo.NewUpdateOneModel()
 			dbOperation.SetFilter(bson.M{"_id": directory["_id"]})
@@ -688,9 +691,9 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 				},
 			})
 
-			operations = append(operations, dbOperation)
+			dbUpdateOperations = append(dbUpdateOperations, dbOperation)
 
-			searchDbList = append(searchDbList, map[string]interface{}{
+			searchDbQueryList = append(searchDbQueryList, map[string]interface{}{
 				"_id":              directory["_id"].(primitive.ObjectID).Hex(),
 				"parent_directory": directory["previous_parent_directory"].(primitive.ObjectID).Hex(),
 			})
@@ -698,13 +701,12 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 
 	}
 
-	res, err := h.Db.Collection("directories").BulkWrite(context.TODO(), operations)
+	res, err := h.Db.Collection("directories").BulkWrite(context.TODO(), dbUpdateOperations)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// Update search database
-	if _, err := h.SearchDb.Index("directories").UpdateDocuments(searchDbList); err != nil {
+	if _, err := h.SearchDb.Index("directories").UpdateDocuments(searchDbQueryList); err != nil {
 		log.Println(err)
 	}
 

@@ -198,7 +198,7 @@ func main() {
 	if gin.Mode() == gin.ReleaseMode {
 		m := autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist("api.ncloudapp.com"),
+			HostPolicy: autocert.HostWhitelist("api.ncloudapp.com", "api2.ncloudapp.com"),
 		}
 		log.Fatal(autotls.RunWithManager(router, &m))
 	} else {

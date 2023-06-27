@@ -9,8 +9,11 @@ services:
     ports:
       - 80:80
       - 443:443
+      - 8080:8080
     env_file:
       - .env
+    volumes:
+      - /var/ncloud_upload:/var/ncloud_upload
   mongodb:
     image: mongo
     container_name: mongodb-ncloud-api
