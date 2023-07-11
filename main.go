@@ -3,9 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/gin-gonic/autotls"
-	"golang.org/x/crypto/acme/autocert"
 	"log"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/autotls"
+	"github.com/gin-gonic/gin"
+	"github.com/meilisearch/meilisearch-go"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/crypto/acme/autocert"
+
 	"ncloud-api/handlers/directories"
 	"ncloud-api/handlers/files"
 	"ncloud-api/handlers/search"
@@ -13,23 +22,17 @@ import (
 	"ncloud-api/middleware/auth"
 	"ncloud-api/middleware/cors"
 	"ncloud-api/utils/helper"
-	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/meilisearch/meilisearch-go"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var DbHost string
-var DbPassword string
-var DbUser string
-var DbName string
-var MeiliApiKey string
-var MeiliHost string
-var Mode string
+var (
+	DbHost      string
+	DbPassword  string
+	DbUser      string
+	DbName      string
+	MeiliApiKey string
+	MeiliHost   string
+	Mode        string
+)
 
 func health(c *gin.Context) {
 	c.JSON(http.StatusOK, map[string]string{"ok": "true"})
@@ -37,6 +40,14 @@ func health(c *gin.Context) {
 
 // Run if you need to sync meilisearch with primary database
 func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
+	_, err := db.Collection("user").Indexes().CreateOne(context.TODO(), mongo.IndexModel{
+		Keys:    bson.D{{Key: "username", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		log.Println(err)
+	}
+
 	if r, err := meiliClient.Index("files").DeleteAllDocuments(); err != nil {
 		log.Panic(r, err)
 	}
@@ -56,8 +67,11 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
 	}
 
 	opts := options.Find().SetProjection(bson.D{
-		{Key: "_id", Value: 1}, {Key: "name", Value: 1},
-		{Key: "parent_directory", Value: 1}, {Key: "user", Value: 1}},
+		{Key: "_id", Value: 1},
+		{Key: "name", Value: 1},
+		{Key: "parent_directory", Value: 1},
+		{Key: "user", Value: 1},
+	},
 	)
 
 	// Add directories to meilisearch
@@ -70,15 +84,21 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
 		log.Fatal(err)
 	}
 
-	_, err = meiliClient.Index("directories").AddDocuments(results)
-	if err != nil {
-		panic(err)
+	if len(results) > 0 {
+		_, err = meiliClient.Index("directories").AddDocuments(results)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// Add files to meilisearch
 	opts = options.Find().SetProjection(bson.D{
-		{Key: "_id", Value: 1}, {Key: "name", Value: 1},
-		{Key: "parent_directory", Value: 1}, {Key: "user", Value: 1}, {Key: "type", Value: 1}},
+		{Key: "_id", Value: 1},
+		{Key: "name", Value: 1},
+		{Key: "parent_directory", Value: 1},
+		{Key: "user", Value: 1},
+		{Key: "type", Value: 1},
+	},
 	)
 
 	cursor, err = db.Collection("files").Find(context.TODO(), bson.D{}, opts)
@@ -90,9 +110,11 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
 		log.Panic(err)
 	}
 
-	_, err = meiliClient.Index("files").AddDocuments(results)
-	if err != nil {
-		log.Panic()
+	if len(results) > 0 {
+		_, err = meiliClient.Index("files").AddDocuments(results)
+		if err != nil {
+			log.Panic()
+		}
 	}
 
 	if _, err := meiliClient.Index("files").UpdateFilterableAttributes(&filterableAttributes); err != nil {
@@ -109,7 +131,6 @@ func initMeiliSearch(db *mongo.Database, meiliClient *meilisearch.Client) {
 	if _, err = meiliClient.Index("files").UpdateSearchableAttributes(&searchableAttributes); err != nil {
 		log.Println(err)
 	}
-
 }
 
 func main() {
@@ -122,7 +143,9 @@ func main() {
 	MeiliHost = helper.GetEnv("MEILI_HOST", "http://localhost:7700")
 	Mode = helper.GetEnv("RUN_MODE", "debug")
 
-	mongoClient, err := mongo.NewClient(options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)))
+	mongoClient, err := mongo.NewClient(
+		options.Client().ApplyURI(fmt.Sprintf("mongodb://%s:%s@%s", DbUser, DbPassword, DbHost)),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -204,5 +227,4 @@ func main() {
 	} else {
 		router.Run("0.0.0.0:8080")
 	}
-
 }
