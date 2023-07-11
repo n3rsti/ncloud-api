@@ -3,10 +3,6 @@ package user
 import (
 	"fmt"
 	"log"
-	"ncloud-api/handlers/files"
-	"ncloud-api/middleware/auth"
-	"ncloud-api/models"
-	"ncloud-api/utils/crypto"
 	"net/http"
 	"os"
 
@@ -17,6 +13,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"gopkg.in/validator.v2"
+
+	"ncloud-api/handlers/files"
+	"ncloud-api/middleware/auth"
+	"ncloud-api/models"
+	"ncloud-api/utils/crypto"
 )
 
 type Handler struct {
@@ -52,7 +53,6 @@ func (h *Handler) Register(c *gin.Context) {
 
 	// hash password
 	passwordHash, err := crypto.GenerateHash(user.Password)
-
 	if err != nil {
 		fmt.Println("Error while creating password hash")
 		return
@@ -61,9 +61,11 @@ func (h *Handler) Register(c *gin.Context) {
 	user.Password = passwordHash
 
 	userInsertResult, err := collection.InsertOne(c, user.ToBSON())
-
 	if err != nil {
-		fmt.Println("Error during DB operation")
+		log.Println("Error during DB operation")
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "user already exists",
+		})
 		return
 	}
 
@@ -71,8 +73,14 @@ func (h *Handler) Register(c *gin.Context) {
 
 	// Create trash and main directory documents
 	docs := []interface{}{
-		bson.D{{Key: "user", Value: userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {Key: "name", Value: "Main"}},
-		bson.D{{Key: "user", Value: userInsertResult.InsertedID.(primitive.ObjectID).Hex()}, {Key: "name", Value: "Trash"}},
+		bson.D{
+			{Key: "user", Value: userInsertResult.InsertedID.(primitive.ObjectID).Hex()},
+			{Key: "name", Value: "Main"},
+		},
+		bson.D{
+			{Key: "user", Value: userInsertResult.InsertedID.(primitive.ObjectID).Hex()},
+			{Key: "name", Value: "Trash"},
+		},
 	}
 
 	opts := options.InsertMany().SetOrdered(true)
@@ -94,8 +102,16 @@ func (h *Handler) Register(c *gin.Context) {
 	mainDirAccessKey, _ := auth.GenerateFileAccessKey(mainDirId, permissions)
 	trashAccessKey, _ := auth.GenerateFileAccessKey(trashId, permissions)
 
-	collection.UpdateByID(c, res.InsertedIDs[0], bson.D{{Key: "$set", Value: bson.M{"access_key": mainDirAccessKey}}})
-	collection.UpdateByID(c, res.InsertedIDs[1], bson.D{{Key: "$set", Value: bson.M{"access_key": trashAccessKey}}})
+	collection.UpdateByID(
+		c,
+		res.InsertedIDs[0],
+		bson.D{{Key: "$set", Value: bson.M{"access_key": mainDirAccessKey}}},
+	)
+	collection.UpdateByID(
+		c,
+		res.InsertedIDs[1],
+		bson.D{{Key: "$set", Value: bson.M{"access_key": trashAccessKey}}},
+	)
 
 	collection = h.Db.Collection("user")
 	collection.UpdateByID(c, userInsertResult.InsertedID,
@@ -148,8 +164,8 @@ func (h *Handler) Login(c *gin.Context) {
 	var result bson.M
 
 	collection := h.Db.Collection("user")
-	err := collection.FindOne(c, bson.D{{Key: "username", Value: loginData.Username}}).Decode(&result)
-
+	err := collection.FindOne(c, bson.D{{Key: "username", Value: loginData.Username}}).
+		Decode(&result)
 	if err != nil {
 		fmt.Println(err)
 		c.Status(http.StatusForbidden)
@@ -198,7 +214,6 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 	token = token[len("Bearer "):]
 
 	accessToken, err := auth.GenerateAccessTokenFromRefreshToken(token)
-
 	if err != nil {
 		c.Status(http.StatusUnauthorized)
 		c.Header("WWW-Authenticate", err.Error())
