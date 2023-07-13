@@ -1,8 +1,9 @@
 package auth
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 type AccessKey struct {
@@ -12,15 +13,9 @@ type AccessKey struct {
 
 func FileAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		fileAccessKey := c.GetHeader("FileAccessKey")
-
-		idParam := c.Param("id")
-		if idParam == "" {
-			idParam = c.Request.RequestURI[len("/files/"):]
-		}
-
-		claims, isValidAccessKey := ValidateAccessKey(fileAccessKey)
-		if !isValidAccessKey || claims.Id != idParam {
+		parentDirectoryAccessKey := c.GetHeader("DirectoryAccessKey")
+		_, isValidAccessKey := ValidateAccessKey(parentDirectoryAccessKey)
+		if !isValidAccessKey {
 			c.Status(http.StatusForbidden)
 			c.Abort()
 			return

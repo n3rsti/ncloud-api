@@ -212,7 +212,6 @@ func main() {
 		fileGroup.Use(auth.FileAuth())
 		{
 			fileGroup.GET("/files/:id", fileHandler.GetFile)
-			fileGroup.DELETE("/api/files/:id", fileHandler.DeleteFile)
 			fileGroup.PATCH("/api/files/:id", fileHandler.UpdateFile)
 		}
 

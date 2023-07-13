@@ -8,13 +8,12 @@ import (
 
 type File struct {
 	Id                      string             `json:"id"`
-	Name                    string             `json:"name" validate:"max=260"`
+	Name                    string             `json:"name"                                validate:"max=260"`
 	ParentDirectory         primitive.ObjectID `json:"parent_directory,omitempty"`
 	PreviousParentDirectory primitive.ObjectID `json:"previous_parent_directory,omitempty"`
-	User                    string             `json:"user"`
+	User                    string             `json:"user,omitempty"`
 	Type                    string             `json:"type"`
 	Size                    int64              `json:"size"`
-	AccessKey               string             `json:"access_key"`
 }
 
 func (f *File) ToBSON() bson.D {
@@ -24,7 +23,6 @@ func (f *File) ToBSON() bson.D {
 		{Key: "parent_directory", Value: f.ParentDirectory},
 		{Key: "type", Value: f.Type},
 		{Key: "size", Value: f.Size},
-		{Key: "access_key", Value: f.AccessKey},
 	}
 }
 
@@ -44,7 +42,10 @@ func (f *File) ToBSONnotEmpty() bson.D {
 		data = append(data, bson.E{Key: "parent_directory", Value: f.ParentDirectory})
 	}
 	if !f.PreviousParentDirectory.IsZero() {
-		data = append(data, bson.E{Key: "previous_parent_directory", Value: f.PreviousParentDirectory})
+		data = append(
+			data,
+			bson.E{Key: "previous_parent_directory", Value: f.PreviousParentDirectory},
+		)
 	}
 	if f.Type != "" {
 		data = append(data, bson.E{Key: "type", Value: f.Type})
@@ -52,12 +53,10 @@ func (f *File) ToBSONnotEmpty() bson.D {
 	if f.Size != 0 {
 		data = append(data, bson.E{Key: "size", Value: f.Size})
 	}
-	if f.AccessKey != "" {
-		data = append(data, bson.E{Key: "access_key", Value: f.AccessKey})
-	}
 
 	return data
 }
+
 func (f *File) Validate() error {
 	validate := validator.New()
 	if err := validate.Struct(f); err != nil {

@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"log"
 	"mime/multipart"
-	"ncloud-api/handlers/search"
-	"ncloud-api/middleware/auth"
-	"ncloud-api/models"
 	"net/http"
 	"os"
 
@@ -18,6 +15,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"ncloud-api/handlers/search"
+	"ncloud-api/middleware/auth"
+	"ncloud-api/models"
 )
 
 const UploadDestination = "/var/ncloud_upload/"
@@ -49,7 +50,6 @@ func (h *Handler) DeleteFromSearchDatabase(id []string) {
 
 func getFileContentType(file *multipart.FileHeader) (contentType string, err error) {
 	f, err := file.Open()
-
 	if err != nil {
 		return "", err
 	}
@@ -130,7 +130,6 @@ func (h *Handler) Upload(c *gin.Context) {
 	opts := options.InsertMany().SetOrdered(true)
 
 	res, err := collection.InsertMany(c, fileObjects, opts)
-
 	if err != nil {
 		log.Panic(err)
 	}
@@ -144,17 +143,6 @@ func (h *Handler) Upload(c *gin.Context) {
 		if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+fileId); err != nil {
 			// Remove file document if saving it wasn't successful
 			_, _ = collection.DeleteOne(c, bson.D{{Key: "_id", Value: res.InsertedIDs[index]}})
-			log.Panic(err)
-		}
-
-		permissions := auth.AllFilePermissions
-		// No need to verify directory, because it is verified by parsing it to primitive.ObjectID (parentDirObjectId)
-		fileAccessKey, _ := auth.GenerateFileAccessKey(fileId, permissions, directory)
-
-		filesToReturn[index].AccessKey = fileAccessKey
-		filesToReturn[index].Id = res.InsertedIDs[index].(primitive.ObjectID).Hex()
-
-		if _, err = collection.UpdateByID(c, res.InsertedIDs[index], bson.D{{Key: "$set", Value: bson.M{"access_key": fileAccessKey}}}); err != nil {
 			log.Panic(err)
 		}
 
@@ -173,45 +161,10 @@ func (h *Handler) Upload(c *gin.Context) {
 	c.JSON(http.StatusCreated, filesToReturn)
 }
 
-// DeleteFile
-//
-// # Deletes file from server storage and database
-//
-// To avoid confusion: user is already authenticated and authorized at this point from file_auth
-func (h *Handler) DeleteFile(c *gin.Context) {
-	fileId := c.Param("id")
-	fileAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("FileAccessKey"))
-	parentDirectory := fileAccessKey.ParentDirectory
-
-	// Convert to ObjectID
-	hexFileId, err := primitive.ObjectIDFromHex(fileId)
-	if err != nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
-
-	// Remove file
-	err = os.Remove(UploadDestination + parentDirectory + "/" + fileId)
-	if err != nil {
-		c.Status(http.StatusBadRequest)
-		return
-	}
-
-	collection := h.Db.Collection("files")
-
-	_, err = collection.DeleteOne(c, bson.D{{Key: "_id", Value: hexFileId}})
-	if err != nil {
-		log.Println(err)
-	}
-
-	// Update search database
-	h.DeleteFromSearchDatabase([]string{fileId})
-
-	c.Status(http.StatusNoContent)
-}
-
 func (h *Handler) UpdateFile(c *gin.Context) {
-	claims := auth.ExtractClaimsFromContext(c)
+	parentDirectoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
+	parentDirectoryObjId, _ := primitive.ObjectIDFromHex(parentDirectoryAccessKey.Id)
+
 	// Bind request body to File model
 	var file models.File
 
@@ -229,25 +182,24 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		return
 	}
 
-	// These values can't be modified
-	if file.Size != 0 || file.User != "" || file.Id != "" || file.Type != "" || file.AccessKey != "" || !file.ParentDirectory.IsZero() || !file.PreviousParentDirectory.IsZero() {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "attempt to modify restricted fields",
-		})
-		return
-	}
-
 	// Update file record
 	fileCollection := h.Db.Collection("files")
 	fileId := c.Param("id")
 
-	hexId, err := primitive.ObjectIDFromHex(fileId)
+	fileObjId, err := primitive.ObjectIDFromHex(fileId)
 	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
 
-	_, err = fileCollection.UpdateByID(c, hexId, bson.D{{Key: "$set", Value: file.ToBSONnotEmpty()}})
+	_, err = fileCollection.UpdateOne(
+		context.TODO(),
+		bson.D{
+			{Key: "_id", Value: fileObjId},
+			{Key: "parent_directory", Value: parentDirectoryObjId},
+		},
+		bson.D{{Key: "$set", Value: bson.M{"name": file.Name}}},
+	)
 	if err != nil {
 		fmt.Println(err)
 		c.Status(http.StatusBadRequest)
@@ -257,7 +209,6 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
 		Id:   fileId,
 		Name: file.Name,
-		User: claims.Id,
 	})
 
 	c.Status(http.StatusNoContent)
@@ -265,10 +216,16 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 
 func (h *Handler) GetFile(c *gin.Context) {
 	// Don't need to validate access key, because it is verified in FileAuth
-	fileAccessKey := c.GetHeader("FileAccessKey")
-	claims, _ := auth.ValidateAccessKey(fileAccessKey)
+	fileId := c.Param("id")
+	_, err := primitive.ObjectIDFromHex(fileId)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+	}
 
-	c.File(UploadDestination + claims.ParentDirectory + "/" + claims.Id)
+	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
+	directory, _ := auth.ValidateAccessKey(directoryAccessKey)
+
+	c.File(UploadDestination + directory.Id + "/" + fileId)
 }
 
 func (h *Handler) DeleteFiles(c *gin.Context) {
@@ -327,7 +284,6 @@ func (h *Handler) DeleteFiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"deleted": result.DeletedCount,
 	})
-
 }
 
 func (h *Handler) ChangeDirectory(c *gin.Context) {
@@ -357,7 +313,8 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	}
 
 	// Check if destination directory access key is valid and matches destination directory ID
-	if directoryClaims, valid := auth.ValidateAccessKey(requestData.AccessKey); !valid || directoryClaims.Id != requestData.Id.Hex() {
+	if directoryClaims, valid := auth.ValidateAccessKey(requestData.AccessKey); !valid ||
+		directoryClaims.Id != requestData.Id.Hex() {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid access key for directory: " + requestData.Id.Hex(),
 		})
@@ -366,7 +323,8 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 	for _, directory := range requestData.Directories {
 		// Check if directory access key is valid and matches directory ID
-		if accessKeyClaims, valid := auth.ValidateAccessKey(directory.AccessKey); !valid || accessKeyClaims.Id != directory.Id.Hex() {
+		if accessKeyClaims, valid := auth.ValidateAccessKey(directory.AccessKey); !valid ||
+			accessKeyClaims.Id != directory.Id.Hex() {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "invalid access key for directory: " + directory.Id.Hex(),
 			})
@@ -374,12 +332,6 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		}
 
 		for _, file := range directory.Files {
-			permissions := auth.AllFilePermissions
-			accessKey, err := auth.GenerateFileAccessKey(file.Hex(), permissions, requestData.Id.Hex())
-			if err != nil {
-				log.Panic(err)
-			}
-
 			dbOperation := mongo.NewUpdateOneModel()
 			// File from list in request body AND having parent_directory as directory ID from list
 			// This removes possibility of user providing valid access key, but for different directory and trying to modify file without access to it
@@ -392,7 +344,6 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 			dbOperation.SetUpdate(bson.M{
 				"$set": bson.M{
 					"parent_directory":          requestData.Id,
-					"access_key":                accessKey,
 					"previous_parent_directory": directory.Id,
 				},
 			})
@@ -454,7 +405,8 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 	dbResult := make([]bson.M, 0, len(requestData.Files))
 
 	// Find files from request body list
-	cursor, err := h.Db.Collection("files").Find(context.TODO(), bson.M{"_id": bson.M{"$in": requestData.Files}})
+	cursor, err := h.Db.Collection("files").
+		Find(context.TODO(), bson.M{"_id": bson.M{"$in": requestData.Files}})
 	if err != nil {
 		log.Panic(err)
 	}
@@ -472,24 +424,16 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "no access for file: " + file["_id"].(primitive.ObjectID).Hex(),
 			})
-
 		}
 
 		// Check if previous parent directory isn't empty
 		if !file["previous_parent_directory"].(primitive.ObjectID).IsZero() {
-			// Create new access token
-			accessKey, err := auth.GenerateFileAccessKey(file["_id"].(primitive.ObjectID).Hex(), auth.AllFilePermissions, file["previous_parent_directory"].(primitive.ObjectID).Hex())
-			if err != nil {
-				log.Panic(err)
-			}
-
 			operation := mongo.NewUpdateOneModel()
 			operation.SetFilter(bson.M{"_id": file["_id"]})
 			operation.SetUpdate(bson.M{
 				"$set": bson.M{
 					"parent_directory":          file["previous_parent_directory"],
 					"previous_parent_directory": "",
-					"access_key":                accessKey,
 				},
 			})
 
