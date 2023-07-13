@@ -202,7 +202,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	}
 
 	// Create and set access key to directory
-	newDirectoryAccessKey, _ := auth.GenerateFileAccessKey(
+	newDirectoryAccessKey, _ := auth.GenerateDirectoryAccessKey(
 		directoryId,
 		auth.AllDirectoryPermissions,
 	)

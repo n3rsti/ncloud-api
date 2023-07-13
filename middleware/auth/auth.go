@@ -3,18 +3,22 @@ package auth
 import (
 	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
-	"ncloud-api/utils/helper"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+
+	"ncloud-api/utils/helper"
 )
 
-var SecretKey = helper.GetEnv("SECRET_KEY", "secret")
-var FileSecretKey = helper.GetEnv("FILE_SECRET_KEY", "file_secret")
+var (
+	SecretKey     = helper.GetEnv("SECRET_KEY", "secret")
+	FileSecretKey = helper.GetEnv("FILE_SECRET_KEY", "file_secret")
+)
 
 type SignedClaims struct {
 	Id    string `json:"user_id"`
@@ -22,10 +26,9 @@ type SignedClaims struct {
 	jwt.RegisteredClaims
 }
 
-type FileClaims struct {
-	Id              string   `json:"id"`
-	Permissions     []string `json:"permissions"`
-	ParentDirectory string   `json:"parent_directory,omitempty"`
+type DirectoryClaims struct {
+	Id          string   `json:"id"`
+	Permissions []string `json:"permissions"`
 	jwt.RegisteredClaims
 }
 
@@ -45,7 +48,8 @@ func GenerateTokens(userId string) (accessToken, refreshToken string, err error)
 		},
 	}
 
-	newRefreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, refreshClaims).SignedString([]byte(SecretKey))
+	newRefreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, refreshClaims).
+		SignedString([]byte(SecretKey))
 	if err != nil {
 		log.Panic(err)
 		return "", "", err
@@ -61,7 +65,6 @@ func GenerateAccessTokenFromRefreshToken(refreshToken string) (accessToken strin
 		func(token *jwt.Token) (interface{}, error) {
 			return []byte(SecretKey), nil
 		})
-
 	if err != nil {
 		fmt.Println(err)
 		err = errors.New("invalid refresh token")
@@ -96,16 +99,16 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 		},
 	}
 
-	newToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).SignedString([]byte(SecretKey))
+	newToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).
+		SignedString([]byte(SecretKey))
 	if err != nil {
 		return "", err
 	}
 
 	return newToken, nil
-
 }
 
-// GenerateFileAccessKey
+// GenerateDirectoryAccessKey
 // generates access key for file or directory with parameters:
 //
 //	id, permissions, parentDirectory (optional)
@@ -114,31 +117,24 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 //
 // although parentDirectory is optional as function argument, it is MANDATORY to use parentDirectory for files
 //
-//	fileAccessKey, err := auth.GenerateFileAccessKey(fileId, permissions, directory)
+//	directoryAccessKey, err := auth.GenerateDirectoryAccessKey(fileId, permissions, directory)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//	fmt.Println(fileAccessKey.id)
-//	fmt.Println(fileAccessKey.permissions)
-func GenerateFileAccessKey(id string, permissions []string, parentDirectory ...string) (string, error) {
+//	fmt.Println(directoryAccessKey.id)
+//	fmt.Println(directoryAccessKey.permissions)
+func GenerateDirectoryAccessKey(id string, permissions []string) (string, error) {
 	// Verify id format
 	if _, err := primitive.ObjectIDFromHex(id); err != nil {
 		return "", err
 	}
-	claims := &FileClaims{
+	claims := &DirectoryClaims{
 		Id:          id,
 		Permissions: permissions,
 	}
-	if len(parentDirectory) > 0 {
-		// verify parent directory format
-		if _, err := primitive.ObjectIDFromHex(parentDirectory[0]); err != nil {
-			return "", err
-		}
 
-		claims.ParentDirectory = parentDirectory[0]
-	}
-
-	newToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).SignedString([]byte(FileSecretKey))
+	newToken, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).
+		SignedString([]byte(FileSecretKey))
 	if err != nil {
 		return "", err
 	}
@@ -146,28 +142,27 @@ func GenerateFileAccessKey(id string, permissions []string, parentDirectory ...s
 	return newToken, nil
 }
 
-func ValidateAccessKey(accessKey string) (claims *FileClaims, valid bool) {
+func ValidateAccessKey(accessKey string) (claims *DirectoryClaims, valid bool) {
 	token, err := jwt.ParseWithClaims(
 		accessKey,
-		&FileClaims{},
+		&DirectoryClaims{},
 		func(token *jwt.Token) (interface{}, error) {
 			return []byte(FileSecretKey), nil
 		})
-
 	if err != nil {
-		return &FileClaims{}, false
+		return &DirectoryClaims{}, false
 	}
 
-	claims, ok := token.Claims.(*FileClaims)
+	claims, ok := token.Claims.(*DirectoryClaims)
 
 	if !ok {
-		return &FileClaims{}, false
+		return &DirectoryClaims{}, false
 	}
 
 	return claims, true
 }
 
-func ValidateAccessKeyWithId(accessKey, id string) bool{
+func ValidateAccessKeyWithId(accessKey, id string) bool {
 	claims, valid := ValidateAccessKey(accessKey)
 	if !valid {
 		return false
@@ -180,16 +175,16 @@ func ValidateAccessKeyWithId(accessKey, id string) bool{
 func ValidatePermissions(accessKey, permission string) bool {
 	token, _ := jwt.ParseWithClaims(
 		accessKey,
-		&FileClaims{},
+		&DirectoryClaims{},
 		func(token *jwt.Token) (interface{}, error) {
 			return []byte(FileSecretKey), nil
 		})
 
-	claims, _ := token.Claims.(*FileClaims)
+	claims, _ := token.Claims.(*DirectoryClaims)
 	return helper.StringArrayContains(claims.Permissions, permission)
 }
 
-func ValidatePermissionsFromClaims(claims *FileClaims, permission string) bool{
+func ValidatePermissionsFromClaims(claims *DirectoryClaims, permission string) bool {
 	return helper.StringArrayContains(claims.Permissions, permission)
 }
 
@@ -201,7 +196,6 @@ func ValidateToken(signedToken string) (claims *SignedClaims, err error) {
 			return []byte(SecretKey), nil
 		},
 	)
-
 	if err != nil {
 		return
 	}
@@ -239,7 +233,6 @@ func ExtractClaims(signedToken string) *SignedClaims {
 			return []byte(SecretKey), nil
 		},
 	)
-
 	if err != nil {
 		log.Panic(err)
 		return nil
@@ -282,7 +275,6 @@ func Auth() gin.HandlerFunc {
 		token = token[len("Bearer "):]
 
 		claims, err := ValidateToken(token)
-
 		if err != nil {
 			fmt.Print("XD")
 			c.JSON(http.StatusUnauthorized, gin.H{

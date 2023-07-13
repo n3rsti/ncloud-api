@@ -99,8 +99,8 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
-	mainDirAccessKey, _ := auth.GenerateFileAccessKey(mainDirId, permissions)
-	trashAccessKey, _ := auth.GenerateFileAccessKey(trashId, permissions)
+	mainDirAccessKey, _ := auth.GenerateDirectoryAccessKey(mainDirId, permissions)
+	trashAccessKey, _ := auth.GenerateDirectoryAccessKey(trashId, permissions)
 
 	collection.UpdateByID(
 		c,

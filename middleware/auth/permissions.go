@@ -8,5 +8,9 @@ const (
 
 )
 
-var AllFilePermissions = []string{PermissionRead, PermissionModify, PermissionDelete}
-var AllDirectoryPermissions = []string{PermissionRead, PermissionModify, PermissionDelete, PermissionUpload}
+var AllDirectoryPermissions = []string{
+	PermissionRead,
+	PermissionModify,
+	PermissionDelete,
+	PermissionUpload,
+}
