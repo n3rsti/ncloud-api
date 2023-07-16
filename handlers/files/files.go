@@ -3,6 +3,7 @@ package files
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -469,4 +470,120 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"updated": res.ModifiedCount,
 	})
+}
+
+func createFile(destinationPath string) *os.File {
+	destination, err := os.Create(destinationPath)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return destination
+}
+
+func openFile(sourcePath string) *os.File {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return source
+}
+
+func (h *Handler) CopyFiles(c *gin.Context) {
+	type RequestData struct {
+		Files                []primitive.ObjectID `json:"files"`
+		SourceAccessKey      string               `json:"source_access_key"`
+		DestinationAccessKey string               `json:"destination_access_key"`
+	}
+
+	var requestData RequestData
+	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
+		return
+	}
+
+	sourceDirectory, isValid := auth.ValidateAccessKey(requestData.SourceAccessKey)
+	if !isValid {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "invalid access key for source directory",
+		})
+		return
+	}
+
+	destinationDirectory, isValid := auth.ValidateAccessKey(requestData.DestinationAccessKey)
+	if !isValid {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "invalid access key for destination directory",
+		})
+		return
+	}
+
+	SOURCE_DIRECTORY_ID := sourceDirectory.Id
+	DESTINATION_DIRECTORY_ID := destinationDirectory.Id
+
+	DESTINATION_DIRECTORY_OBJID, err := primitive.ObjectIDFromHex(DESTINATION_DIRECTORY_ID)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	opts := options.Find().SetProjection(bson.D{
+		{Key: "_id", Value: 1},
+		{Key: "name", Value: 1},
+		{Key: "parent_directory", Value: 1},
+		{Key: "user", Value: 1},
+		{Key: "type", Value: 1},
+		{Key: "size", Value: 1},
+	},
+	)
+
+	cursor, err := h.Db.Collection("files").
+		Find(context.TODO(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: requestData.Files}}}}, opts)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	var files []models.File
+
+	if err := cursor.All(context.TODO(), &files); err != nil {
+		log.Panic(err)
+		return
+	}
+
+	sourceFileIdList := make([]string, 0, len(files))
+	for idx, file := range files {
+		sourceFileIdList = append(sourceFileIdList, file.Id)
+		file.Id = ""
+		file.ParentDirectory = DESTINATION_DIRECTORY_OBJID
+		files[idx] = file
+	}
+
+	insertOpts := options.InsertMany().SetOrdered(true)
+	insertResult, err := h.Db.Collection("files").
+		InsertMany(context.TODO(), models.FilesToBsonNotEmpty(files), insertOpts)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	if len(insertResult.InsertedIDs) != len(sourceFileIdList) {
+		log.Panic("Error during insert")
+	}
+
+	for i := 0; i < len(insertResult.InsertedIDs); i++ {
+		source := openFile(UploadDestination + SOURCE_DIRECTORY_ID + "/" + sourceFileIdList[i])
+		defer source.Close()
+
+		destination := createFile(
+			UploadDestination + DESTINATION_DIRECTORY_ID + "/" + insertResult.InsertedIDs[i].(primitive.ObjectID).Hex(),
+		)
+		defer destination.Close()
+
+		if _, err := io.Copy(destination, source); err != nil {
+			log.Panic(err)
+		}
+	}
+
+	c.Status(http.StatusNoContent)
 }

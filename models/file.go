@@ -7,8 +7,8 @@ import (
 )
 
 type File struct {
-	Id                      string             `json:"id"`
-	Name                    string             `json:"name"                                validate:"max=260"`
+	Id                      string             `json:"id"                                  bson:"_id"`
+	Name                    string             `json:"name"                                           validate:"max=260"`
 	ParentDirectory         primitive.ObjectID `json:"parent_directory,omitempty"`
 	PreviousParentDirectory primitive.ObjectID `json:"previous_parent_directory,omitempty"`
 	User                    string             `json:"user,omitempty"`
@@ -31,7 +31,6 @@ func (f *File) ToBSON() bson.D {
 // Convert File struct to BSON ignoring empty fields
 func (f *File) ToBSONnotEmpty() bson.D {
 	var data bson.D
-
 	if f.Name != "" {
 		data = append(data, bson.E{Key: "name", Value: f.Name})
 	}
@@ -63,4 +62,13 @@ func (f *File) Validate() error {
 		return err
 	}
 	return nil
+}
+
+func FilesToBsonNotEmpty(files []File) []interface{} {
+	result := make([]interface{}, 0, len(files))
+	for _, file := range files {
+		result = append(result, file.ToBSONnotEmpty())
+	}
+
+	return result
 }

@@ -183,6 +183,7 @@ func main() {
 	router.GET("/api/token/refresh", userHandler.RefreshToken)
 	router.POST("/api/files/delete", fileHandler.DeleteFiles)
 	router.POST("/api/files/move", fileHandler.ChangeDirectory)
+	router.POST("/api/files/copy", fileHandler.CopyFiles)
 
 	router.MaxMultipartMemory = 8 << 20 // 8 MiB
 
