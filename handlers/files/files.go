@@ -147,6 +147,8 @@ func (h *Handler) Upload(c *gin.Context) {
 			log.Panic(err)
 		}
 
+		filesToReturn[index].Id = fileId
+
 		fileContentType, _ := getFileContentType(file)
 
 		// Update search database
@@ -583,7 +585,9 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 		if _, err := io.Copy(destination, source); err != nil {
 			log.Panic(err)
 		}
+
+		files[i].Id = insertResult.InsertedIDs[i].(primitive.ObjectID).Hex()
 	}
 
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, files)
 }
