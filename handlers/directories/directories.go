@@ -474,7 +474,7 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 func (h *Handler) DeleteDirectory(c *gin.Context) {
 	// Verify permissions from access key
 	directoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
-	if !helper.StringArrayContains(directoryAccessKey.Permissions, auth.PermissionDelete) {
+	if !helper.ArrayContains(directoryAccessKey.Permissions, auth.PermissionDelete) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "no permission to delete this directory",
 		})
@@ -583,7 +583,7 @@ func validateDirectory(
 			"error": "no permission to modify this directory",
 		})
 		return false
-	} else if helper.ObjectIArrayContains(GetDirectoriesFromParent(directoryTree[directoryId], directoryTree), directoryToMove) || directoryId == directoryToMove {
+	} else if helper.ArrayContains(GetDirectoriesFromParent(directoryTree[directoryId], directoryTree), directoryToMove) || directoryId == directoryToMove {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "cannot move directory " + directoryId.Hex() + " to itself",
 		})

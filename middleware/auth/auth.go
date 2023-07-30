@@ -181,11 +181,11 @@ func ValidatePermissions(accessKey, permission string) bool {
 		})
 
 	claims, _ := token.Claims.(*DirectoryClaims)
-	return helper.StringArrayContains(claims.Permissions, permission)
+	return helper.ArrayContains(claims.Permissions, permission)
 }
 
 func ValidatePermissionsFromClaims(claims *DirectoryClaims, permission string) bool {
-	return helper.StringArrayContains(claims.Permissions, permission)
+	return helper.ArrayContains(claims.Permissions, permission)
 }
 
 func ValidateToken(signedToken string) (claims *SignedClaims, err error) {

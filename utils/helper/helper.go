@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -24,16 +23,7 @@ func GetEnv(name, fallback string) string {
 	return fallback
 }
 
-func StringArrayContains(arr []string, element string) bool {
-	for _, v := range arr {
-		if v == element {
-			return true
-		}
-	}
-	return false
-}
-
-func ObjectIArrayContains(arr []primitive.ObjectID, element primitive.ObjectID) bool {
+func ArrayContains[T comparable](arr []T, element T) bool {
 	for _, v := range arr {
 		if v == element {
 			return true
