@@ -1,15 +1,21 @@
 package models
 
 import (
+	"context"
+
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"ncloud-api/utils/helper"
 )
 
 type File struct {
-	Id                      string             `json:"id"                                  bson:"_id"`
-	Name                    string             `json:"name"                                           validate:"max=260"`
-	ParentDirectory         primitive.ObjectID `json:"parent_directory,omitempty"`
+	Id                      primitive.ObjectID `json:"id"                                  bson:"_id"`
+	Name                    string             `json:"name"                                                        validate:"max=260"`
+	ParentDirectory         primitive.ObjectID `json:"parent_directory,omitempty"          bson:"parent_directory"`
 	PreviousParentDirectory primitive.ObjectID `json:"previous_parent_directory,omitempty"`
 	User                    string             `json:"user,omitempty"`
 	Type                    string             `json:"type"`
@@ -62,6 +68,29 @@ func (f *File) Validate() error {
 		return err
 	}
 	return nil
+}
+
+func FindFilesByFilter[T interface{}](
+	db *mongo.Database,
+	filter interface{},
+	opts ...*options.FindOptions,
+) ([]T, error) {
+	cursor, err := db.Collection("files").Find(context.TODO(), filter, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return helper.MapCursorToObject[T](cursor)
+}
+
+func FindFilesById[T interface{}](
+	db *mongo.Database,
+	idList []primitive.ObjectID,
+	opts ...*options.FindOptions,
+) ([]T, error) {
+	filter := bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: idList}}}}
+
+	return FindFilesByFilter[T](db, filter, opts...)
 }
 
 func FilesToBsonNotEmpty(files []File) []interface{} {

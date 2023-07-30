@@ -11,9 +11,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/meilisearch/meilisearch-go"
+	cp "github.com/otiai10/copy"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"ncloud-api/handlers/files"
 	"ncloud-api/handlers/search"
@@ -765,4 +767,175 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"updated": res.ModifiedCount,
 	})
+}
+
+func (h *Handler) CopyDirectories(c *gin.Context) {
+	type RequestData struct {
+		SourceAccessKey      string               `json:"source_access_key"`
+		DestinationAccessKey string               `json:"destination_access_key"`
+		Directories          []primitive.ObjectID `json:"directories"`
+	}
+
+	var data RequestData
+
+	if err := c.MustBindWith(&data, binding.JSON); err != nil {
+		return
+	}
+
+	sourceAccessKey, isValid := auth.ValidateAccessKey(data.SourceAccessKey)
+	if !isValid {
+		c.Status(http.StatusForbidden)
+		return
+	}
+
+	destinationAccessKey, isValid := auth.ValidateAccessKey(data.DestinationAccessKey)
+	if !isValid {
+		c.Status(http.StatusForbidden)
+		return
+	}
+
+	SOURCE_DIR_ID := sourceAccessKey.Id
+	SOURCE_DIR_OBJ_ID, err := primitive.ObjectIDFromHex(SOURCE_DIR_ID)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		log.Println(err)
+		return
+	}
+	DESTINATION_DIR_ID := destinationAccessKey.Id
+
+	DESTINATION_DIR_OBJ_ID, err := primitive.ObjectIDFromHex(DESTINATION_DIR_ID)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		log.Println(err)
+		return
+	}
+
+	filter := bson.D{
+		{
+			Key: "_id", Value: bson.D{
+				{Key: "$in", Value: data.Directories},
+			},
+		},
+		{Key: "parent_directory", Value: SOURCE_DIR_OBJ_ID},
+	}
+
+	directories, err := models.FindDirectoriesByFilter[models.Directory](h.Db, filter)
+	if err != nil || len(directories) != len(data.Directories) {
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+
+		c.Status(http.StatusBadRequest)
+		fmt.Println(directories)
+		log.Println("Invalid result length")
+		return
+	}
+
+	for idx := range directories {
+		directories[idx].Id = ""
+		directories[idx].PreviousParentDirectory = primitive.NilObjectID
+		directories[idx].ParentDirectory = DESTINATION_DIR_OBJ_ID
+	}
+
+	opts := options.InsertMany().SetOrdered(true)
+	insertResult, err := h.Db.Collection("directories").
+		InsertMany(context.TODO(), models.DirectoriesToBsonNotEmpty(directories), opts)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	idMap := make(map[primitive.ObjectID]primitive.ObjectID, len(insertResult.InsertedIDs))
+	for idx, id := range data.Directories {
+		idMap[id] = insertResult.InsertedIDs[idx].(primitive.ObjectID)
+	}
+
+	var updateOperations []mongo.WriteModel
+
+	for idx, resultId := range insertResult.InsertedIDs {
+		newAccessKey, err := auth.GenerateDirectoryAccessKey(
+			resultId.(primitive.ObjectID).Hex(),
+			auth.AllDirectoryPermissions,
+		)
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+
+		directories[idx].AccessKey = newAccessKey
+		directories[idx].Id = resultId.(primitive.ObjectID).Hex()
+
+		dbOperation := mongo.NewUpdateOneModel()
+		dbOperation.SetFilter(bson.M{
+			"_id": resultId.(primitive.ObjectID),
+		})
+
+		dbOperation.SetUpdate(bson.M{
+			"$set": bson.M{
+				"access_key": newAccessKey,
+			},
+		})
+
+		updateOperations = append(updateOperations, dbOperation)
+	}
+
+	_, err = h.Db.Collection("directories").BulkWrite(context.TODO(), updateOperations)
+	if err != nil {
+		h.Db.Collection("directories").
+			DeleteMany(context.TODO(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: insertResult.InsertedIDs}}}})
+	}
+
+	filter = bson.D{
+		{
+			Key: "parent_directory", Value: bson.D{
+				{Key: "$in", Value: data.Directories},
+			},
+		},
+	}
+
+	findOpts := options.Find().SetSort(bson.D{{Key: "parent_directory", Value: 1}})
+	filesToCopy, err := models.FindFilesByFilter[models.File](h.Db, filter, findOpts)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	previousIdList := make([]primitive.ObjectID, 0, len(filesToCopy))
+
+	for idx, file := range filesToCopy {
+		previousIdList = append(previousIdList, file.Id)
+
+		filesToCopy[idx].Id = primitive.NilObjectID
+		filesToCopy[idx].ParentDirectory = idMap[file.ParentDirectory]
+	}
+
+	fileInsertResult, err := h.Db.Collection("files").
+		InsertMany(context.TODO(), models.FilesToBsonNotEmpty(filesToCopy), opts)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	for idx := range insertResult.InsertedIDs {
+		sourceDirectory := files.UploadDestination + data.Directories[idx].Hex()
+		destinationDirectory := files.UploadDestination + insertResult.InsertedIDs[idx].(primitive.ObjectID).Hex()
+		if err := cp.Copy(sourceDirectory, destinationDirectory); err != nil {
+			log.Panic(err)
+			return
+		}
+
+	}
+
+	for idx, file := range filesToCopy {
+		if err := os.Rename(
+			files.UploadDestination+file.ParentDirectory.Hex()+"/"+previousIdList[idx].Hex(),
+			files.UploadDestination+file.ParentDirectory.Hex()+"/"+fileInsertResult.InsertedIDs[idx].(primitive.ObjectID).Hex(),
+		); err != nil {
+			log.Panic(err)
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, directories)
 }

@@ -139,9 +139,9 @@ func (h *Handler) Upload(c *gin.Context) {
 	// Update filesToReturn with created ID and access key
 	for index, file := range files {
 		// Convert ID to string
-		fileId := res.InsertedIDs[index].(primitive.ObjectID).Hex()
+		fileId := res.InsertedIDs[index].(primitive.ObjectID)
 
-		if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+fileId); err != nil {
+		if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+fileId.Hex()); err != nil {
 			// Remove file document if saving it wasn't successful
 			_, _ = collection.DeleteOne(c, bson.D{{Key: "_id", Value: res.InsertedIDs[index]}})
 			log.Panic(err)
@@ -153,7 +153,7 @@ func (h *Handler) Upload(c *gin.Context) {
 
 		// Update search database
 		h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
-			Id:        fileId,
+			Id:        fileId.Hex(),
 			Name:      file.Filename,
 			Directory: directory,
 			User:      claims.Id,
@@ -555,8 +555,8 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 
 	sourceFileIdList := make([]string, 0, len(files))
 	for idx, file := range files {
-		sourceFileIdList = append(sourceFileIdList, file.Id)
-		file.Id = ""
+		sourceFileIdList = append(sourceFileIdList, file.Id.Hex())
+		file.Id = primitive.NilObjectID
 		file.ParentDirectory = DESTINATION_DIRECTORY_OBJID
 		files[idx] = file
 	}
@@ -586,7 +586,7 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 			log.Panic(err)
 		}
 
-		files[i].Id = insertResult.InsertedIDs[i].(primitive.ObjectID).Hex()
+		files[i].Id = insertResult.InsertedIDs[i].(primitive.ObjectID)
 	}
 
 	c.JSON(http.StatusOK, files)
