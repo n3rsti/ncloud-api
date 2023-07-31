@@ -67,7 +67,7 @@ func (d *Directory) Validate() error {
 
 func FindDirectoriesById[T interface{}](
 	db *mongo.Database,
-	idList []primitive.ObjectID,
+	idList []string,
 	opts ...*options.FindOptions,
 ) ([]T, error) {
 	filter := bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: idList}}}}

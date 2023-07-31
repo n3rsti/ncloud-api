@@ -5,7 +5,6 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -13,13 +12,13 @@ import (
 )
 
 type File struct {
-	Id                      primitive.ObjectID `json:"id"                                  bson:"_id"`
-	Name                    string             `json:"name"                                                        validate:"max=260"`
-	ParentDirectory         string             `json:"parent_directory,omitempty"          bson:"parent_directory"`
-	PreviousParentDirectory string             `json:"previous_parent_directory,omitempty"`
-	User                    string             `json:"user,omitempty"`
-	Type                    string             `json:"type"`
-	Size                    int64              `json:"size"`
+	Id                      string `json:"id"                                  bson:"_id"`
+	Name                    string `json:"name"                                                        validate:"max=260"`
+	ParentDirectory         string `json:"parent_directory,omitempty"          bson:"parent_directory"`
+	PreviousParentDirectory string `json:"previous_parent_directory,omitempty"`
+	User                    string `json:"user,omitempty"`
+	Type                    string `json:"type"`
+	Size                    int64  `json:"size"`
 }
 
 func (f *File) ToBSON() bson.D {
@@ -37,6 +36,10 @@ func (f *File) ToBSON() bson.D {
 // Convert File struct to BSON ignoring empty fields
 func (f *File) ToBSONnotEmpty() bson.D {
 	var data bson.D
+
+	if f.Id != "" {
+		data = append(data, bson.E{Key: "_id", Value: f.Id})
+	}
 	if f.Name != "" {
 		data = append(data, bson.E{Key: "name", Value: f.Name})
 	}
@@ -85,7 +88,7 @@ func FindFilesByFilter[T interface{}](
 
 func FindFilesById[T interface{}](
 	db *mongo.Database,
-	idList []primitive.ObjectID,
+	idList []string,
 	opts ...*options.FindOptions,
 ) ([]T, error) {
 	filter := bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: idList}}}}

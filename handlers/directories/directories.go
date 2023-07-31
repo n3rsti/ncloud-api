@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/meilisearch/meilisearch-go"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"ncloud-api/handlers/files"
@@ -22,11 +21,6 @@ import (
 	"ncloud-api/models"
 	"ncloud-api/utils/helper"
 )
-
-type PatchRequestData struct {
-	DirectoryId primitive.ObjectID `json:"id"`
-	AccessKey   string             `json:"access_key"`
-}
 
 type Handler struct {
 	Db       *mongo.Database
@@ -254,7 +248,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 
 Return type:
 
-	Array of ObjectID elements
+	Array of string elements
 
 Example:
 
@@ -316,8 +310,6 @@ func (h *Handler) FindAndMapDirectories(user string) map[string][]string {
 	/*
 		Map folders into hash map in format:
 		parent_directory: [child_directory1, child_directory2, ...]
-
-		(parent and child directories are in ObjectID type for easier filtering)
 	*/
 
 	dict := make(map[string][]string, len(results))
@@ -484,9 +476,9 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	// used to construct search database update query
 	searchDbQueryList := make([]map[string]interface{}, 0, len(requestData.Items))
 
-	directoryObjectIdList := make([]string, 0, len(requestData.Items))
+	directoryIdList := make([]string, 0, len(requestData.Items))
 
-	// Validate each file and add them to searchDbQueryList and directoryObjectIdList
+	// Validate each file and add them to searchDbQueryList and directoryIdList
 	for _, directory := range requestData.Items {
 		if isValidDirectory := validateDirectory(c, directory.AccessKey, directory.Id, requestData.Id, directoryTree); !isValidDirectory {
 			return
@@ -516,17 +508,17 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 			operations = append(operations, dbOperation)
 		} else {
-			directoryObjectIdList = append(directoryObjectIdList, directory.Id)
+			directoryIdList = append(directoryIdList, directory.Id)
 		}
 
 	}
 
-	if len(directoryObjectIdList) > 0 {
+	if len(directoryIdList) > 0 {
 		updateOperation := mongo.NewUpdateManyModel()
 
 		updateOperation.SetFilter(bson.D{
 			{Key: "_id", Value: bson.D{
-				{Key: "$in", Value: directoryObjectIdList},
+				{Key: "$in", Value: directoryIdList},
 			}},
 		})
 
