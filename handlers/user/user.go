@@ -7,11 +7,11 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/meilisearch/meilisearch-go"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"gopkg.in/validator.v2"
 
 	"ncloud-api/handlers/files"
@@ -69,49 +69,40 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
+	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
+
+	mainId, _ := uuid.NewUUID()
+	accessKey, _ := auth.GenerateDirectoryAccessKey(mainId.String(), permissions)
+	mainDir := models.Directory{
+		Name:      "Main",
+		User:      userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
+		Id:        mainId.String(),
+		AccessKey: accessKey,
+	}
+
+	trashId, _ := uuid.NewUUID()
+	trashAccessKey, _ := auth.GenerateDirectoryAccessKey(trashId.String(), permissions)
+	trashDir := models.Directory{
+		Name:      "Trash",
+		User:      userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
+		Id:        trashId.String(),
+		AccessKey: trashAccessKey,
+	}
+
 	collection = h.Db.Collection("directories")
 
-	// Create trash and main directory documents
-	docs := []interface{}{
-		bson.D{
-			{Key: "user", Value: userInsertResult.InsertedID.(primitive.ObjectID).Hex()},
-			{Key: "name", Value: "Main"},
-		},
-		bson.D{
-			{Key: "user", Value: userInsertResult.InsertedID.(primitive.ObjectID).Hex()},
-			{Key: "name", Value: "Trash"},
-		},
-	}
-
-	opts := options.InsertMany().SetOrdered(true)
-	res, _ := collection.InsertMany(c, docs, opts)
-
-	// Generate access keys for created directories
-	mainDirId := res.InsertedIDs[0].(primitive.ObjectID).Hex()
-	trashId := res.InsertedIDs[1].(primitive.ObjectID).Hex()
+	_, _ = collection.InsertMany(
+		c,
+		models.DirectoriesToBsonNotEmpty([]models.Directory{mainDir, trashDir}),
+	)
 
 	// TODO: do something on error
-	if err := os.Mkdir(files.UploadDestination+mainDirId, 0700); err != nil {
+	if err := os.Mkdir(files.UploadDestination+mainId.String(), 0700); err != nil {
 		log.Println(err)
 	}
-	if err := os.Mkdir(files.UploadDestination+trashId, 0700); err != nil {
+	if err := os.Mkdir(files.UploadDestination+trashId.String(), 0700); err != nil {
 		log.Println(err)
 	}
-
-	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
-	mainDirAccessKey, _ := auth.GenerateDirectoryAccessKey(mainDirId, permissions)
-	trashAccessKey, _ := auth.GenerateDirectoryAccessKey(trashId, permissions)
-
-	collection.UpdateByID(
-		c,
-		res.InsertedIDs[0],
-		bson.D{{Key: "$set", Value: bson.M{"access_key": mainDirAccessKey}}},
-	)
-	collection.UpdateByID(
-		c,
-		res.InsertedIDs[1],
-		bson.D{{Key: "$set", Value: bson.M{"access_key": trashAccessKey}}},
-	)
 
 	collection = h.Db.Collection("user")
 	collection.UpdateByID(c, userInsertResult.InsertedID,
@@ -125,7 +116,7 @@ func (h *Handler) Register(c *gin.Context) {
 
 	// Add to search database
 	if _, err := h.SearchDb.Index("directories").AddDocuments(&SearchDatabaseData{
-		Id:   res.InsertedIDs[0].(primitive.ObjectID).Hex(),
+		Id:   mainId.String(),
 		Name: "Main",
 		User: userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
 	}); err != nil {
@@ -133,7 +124,7 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	if _, err := h.SearchDb.Index("directories").AddDocuments(&SearchDatabaseData{
-		Id:   res.InsertedIDs[1].(primitive.ObjectID).Hex(),
+		Id:   trashId.String(),
 		Name: "Trash",
 		User: userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
 	}); err != nil {

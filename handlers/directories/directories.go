@@ -163,7 +163,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 
 	collection := h.Db.Collection("directories")
 
-	_, err := collection.InsertOne(c, directory.ToBSON())
+	_, err := collection.InsertOne(c, directory.ToBsonNotEmpty())
 	if err != nil {
 		fmt.Println(err)
 		c.Status(http.StatusBadRequest)
@@ -557,7 +557,7 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 	userClaims := auth.ExtractClaimsFromContext(c)
 
 	type RequestData struct {
-		Directories []primitive.ObjectID `json:"directories"`
+		Directories []string `json:"directories"`
 	}
 
 	var requestData RequestData
@@ -588,11 +588,11 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 	for _, directory := range dbFindResult {
 		if directory["user"].(string) != userClaims.Id {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "no access for directory: " + directory["_id"].(primitive.ObjectID).Hex(),
+				"error": "no access for directory: " + directory["_id"].(string),
 			})
 		}
 
-		if !directory["previous_parent_directory"].(primitive.ObjectID).IsZero() {
+		if directory["previous_parent_directory"].(string) != "" {
 			dbOperation := mongo.NewUpdateOneModel()
 			dbOperation.SetFilter(bson.M{"_id": directory["_id"]})
 			dbOperation.SetUpdate(bson.M{
@@ -605,8 +605,8 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 			dbUpdateOperations = append(dbUpdateOperations, dbOperation)
 
 			searchDbQueryList = append(searchDbQueryList, map[string]interface{}{
-				"_id":              directory["_id"].(primitive.ObjectID).Hex(),
-				"parent_directory": directory["previous_parent_directory"].(primitive.ObjectID).Hex(),
+				"_id":              directory["_id"].(string),
+				"parent_directory": directory["previous_parent_directory"].(string),
 			})
 		}
 

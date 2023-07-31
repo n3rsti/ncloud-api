@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"ncloud-api/utils/helper"
 )
@@ -124,10 +123,6 @@ func generateAccessToken(userId string) (accessToken string, err error) {
 //	fmt.Println(directoryAccessKey.id)
 //	fmt.Println(directoryAccessKey.permissions)
 func GenerateDirectoryAccessKey(id string, permissions []string) (string, error) {
-	// Verify id format
-	if _, err := primitive.ObjectIDFromHex(id); err != nil {
-		return "", err
-	}
 	claims := &DirectoryClaims{
 		Id:          id,
 		Permissions: permissions,
