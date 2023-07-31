@@ -15,8 +15,8 @@ import (
 type File struct {
 	Id                      primitive.ObjectID `json:"id"                                  bson:"_id"`
 	Name                    string             `json:"name"                                                        validate:"max=260"`
-	ParentDirectory         primitive.ObjectID `json:"parent_directory,omitempty"          bson:"parent_directory"`
-	PreviousParentDirectory primitive.ObjectID `json:"previous_parent_directory,omitempty"`
+	ParentDirectory         string             `json:"parent_directory,omitempty"          bson:"parent_directory"`
+	PreviousParentDirectory string             `json:"previous_parent_directory,omitempty"`
 	User                    string             `json:"user,omitempty"`
 	Type                    string             `json:"type"`
 	Size                    int64              `json:"size"`
@@ -43,10 +43,10 @@ func (f *File) ToBSONnotEmpty() bson.D {
 	if f.User != "" {
 		data = append(data, bson.E{Key: "user", Value: f.User})
 	}
-	if !f.ParentDirectory.IsZero() {
+	if f.ParentDirectory != "" {
 		data = append(data, bson.E{Key: "parent_directory", Value: f.ParentDirectory})
 	}
-	if !f.PreviousParentDirectory.IsZero() {
+	if f.PreviousParentDirectory != "" {
 		data = append(
 			data,
 			bson.E{Key: "previous_parent_directory", Value: f.PreviousParentDirectory},

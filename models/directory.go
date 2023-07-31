@@ -13,12 +13,12 @@ import (
 )
 
 type Directory struct {
-	Id                      string             `json:"id"`
-	Name                    string             `json:"name"                                validate:"max=100"`
-	ParentDirectory         primitive.ObjectID `json:"parent_directory"`
-	PreviousParentDirectory primitive.ObjectID `json:"previous_parent_directory,omitempty"`
-	User                    string             `json:"user"`
-	AccessKey               string             `json:"access_key"`
+	Id                      string `json:"id"`
+	Name                    string `json:"name"                                validate:"max=100"`
+	ParentDirectory         string `json:"parent_directory"`
+	PreviousParentDirectory string `json:"previous_parent_directory,omitempty"`
+	User                    string `json:"user"`
+	AccessKey               string `json:"access_key"`
 }
 
 func (d *Directory) ToBSON() bson.D {
@@ -35,10 +35,10 @@ func (d *Directory) ToBsonNotEmpty() bson.D {
 	if d.Name != "" {
 		data = append(data, bson.E{Key: "name", Value: d.Name})
 	}
-	if !d.ParentDirectory.IsZero() {
+	if d.ParentDirectory != "" {
 		data = append(data, bson.E{Key: "parent_directory", Value: d.ParentDirectory})
 	}
-	if !d.PreviousParentDirectory.IsZero() {
+	if d.PreviousParentDirectory != "" {
 		data = append(
 			data,
 			bson.E{Key: "previous_parent_directory", Value: d.PreviousParentDirectory},

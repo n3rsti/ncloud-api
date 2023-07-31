@@ -95,21 +95,13 @@ func (h *Handler) Upload(c *gin.Context) {
 	directory := c.Param("id")
 	claims := auth.ExtractClaimsFromContext(c)
 
-	// Convert directoryId to ObjectId
-	// There is no need to verify it because it is verified in directoryAuth
-	parentDirObjectId, err := primitive.ObjectIDFromHex(directory)
-	if err != nil {
-		c.Status(http.StatusBadRequest)
-		return
-	}
-
 	// Create array of files based on form data
 	for _, file := range files {
 		fileContentType, _ := getFileContentType(file)
 
 		newFile := models.File{
 			Name:            file.Filename,
-			ParentDirectory: parentDirObjectId,
+			ParentDirectory: directory,
 			User:            claims.Id,
 			Type:            fileContentType,
 			Size:            file.Size,
@@ -523,12 +515,6 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 	SOURCE_DIRECTORY_ID := sourceDirectory.Id
 	DESTINATION_DIRECTORY_ID := destinationDirectory.Id
 
-	DESTINATION_DIRECTORY_OBJID, err := primitive.ObjectIDFromHex(DESTINATION_DIRECTORY_ID)
-	if err != nil {
-		log.Panic(err)
-		return
-	}
-
 	opts := options.Find().SetProjection(bson.D{
 		{Key: "_id", Value: 1},
 		{Key: "name", Value: 1},
@@ -557,7 +543,7 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 	for idx, file := range files {
 		sourceFileIdList = append(sourceFileIdList, file.Id.Hex())
 		file.Id = primitive.NilObjectID
-		file.ParentDirectory = DESTINATION_DIRECTORY_OBJID
+		file.ParentDirectory = DESTINATION_DIRECTORY_ID
 		files[idx] = file
 	}
 

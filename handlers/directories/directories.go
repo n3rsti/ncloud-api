@@ -10,12 +10,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/google/uuid"
 	"github.com/meilisearch/meilisearch-go"
-	cp "github.com/otiai10/copy"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"ncloud-api/handlers/files"
 	"ncloud-api/handlers/search"
@@ -67,19 +66,9 @@ func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 			}},
 		}
 	} else {
-		// Attempt to convert url ID parameter to ObjectID
-		// If it fails, it means that parameter is not valid
-		directoryObjectId, err := primitive.ObjectIDFromHex(directoryId)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid ID",
-			})
-			return
-		}
-
 		matchStage = bson.D{
 			{Key: "$match", Value: bson.D{
-				{Key: "_id", Value: directoryObjectId},
+				{Key: "_id", Value: directoryId},
 			}},
 		}
 	}
@@ -148,19 +137,6 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
-	// Attempt to convert url ID parameter to ObjectID
-	// If it fails, it means ID is not valid
-	hexId, err := primitive.ObjectIDFromHex(parentDirectoryId)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid ID format",
-		})
-		return
-	}
-
-	// Set parentDirectoryId from URL
-	directory.ParentDirectory = hexId
-
 	if directory.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "empty name or parent directory",
@@ -170,53 +146,38 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 
 	user := auth.ExtractClaimsFromContext(c)
 
+	// Set parentDirectoryId from URL
+	directory.ParentDirectory = parentDirectoryId
 	directory.User = user.Id
+
+	directoryId, _ := uuid.NewUUID()
+	directory.Id = directoryId.String()
+
+	// Create and set access key to directory
+	newDirectoryAccessKey, _ := auth.GenerateDirectoryAccessKey(
+		directoryId.String(),
+		auth.AllDirectoryPermissions,
+	)
+
+	directory.AccessKey = newDirectoryAccessKey
 
 	collection := h.Db.Collection("directories")
 
-	// Check if user is the owner of the directory where he wants to create directory
-	var dbResult bson.M
-
-	if err = collection.FindOne(c, bson.D{{Key: "_id", Value: hexId}}).Decode(&dbResult); err != nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
-
-	if dbResult["user"] != user.Id {
-		c.Status(http.StatusForbidden)
-		return
-	}
-
-	res, err := collection.InsertOne(c, directory.ToBSON())
+	_, err := collection.InsertOne(c, directory.ToBSON())
 	if err != nil {
 		fmt.Println(err)
 		c.Status(http.StatusBadRequest)
 		return
 	}
 
-	// Get ID of created directory from mongodb insert query response
-	directoryId := res.InsertedID.(primitive.ObjectID).Hex()
-	directory.Id = directoryId
-
 	// Create directory on disk
-	if err := os.Mkdir(files.UploadDestination+directoryId, 0700); err != nil {
+	if err := os.Mkdir(files.UploadDestination+directoryId.String(), 0700); err != nil {
 		log.Panic(err)
 	}
-
-	// Create and set access key to directory
-	newDirectoryAccessKey, _ := auth.GenerateDirectoryAccessKey(
-		directoryId,
-		auth.AllDirectoryPermissions,
-	)
-	if _, err := collection.UpdateByID(c, res.InsertedID, bson.D{{Key: "$set", Value: bson.M{"access_key": newDirectoryAccessKey}}}); err != nil {
-		log.Panic(err)
-	}
-
-	directory.AccessKey = newDirectoryAccessKey
 
 	// Update search database
 	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
-		Id:        directoryId,
+		Id:        directoryId.String(),
 		Name:      directory.Name,
 		Directory: parentDirectoryId,
 		User:      user.Id,
@@ -257,29 +218,19 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 	}
 
 	if directory.User != "" || directory.Id != "" || directory.AccessKey != "" ||
-		!directory.PreviousParentDirectory.IsZero() ||
-		!directory.ParentDirectory.IsZero() {
+		directory.PreviousParentDirectory != "" ||
+		directory.ParentDirectory != "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "attempt to modify restricted fields",
 		})
 		return
 	}
 
-	accessKey, _ := auth.ValidateAccessKey(dirAccessKey)
-	if accessKey.Id == directory.ParentDirectory.Hex() {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "can't set same id and parent_directory_id",
-		})
-		return
-	}
-
 	collection := h.Db.Collection("directories")
-
-	directoryObjectId, _ := primitive.ObjectIDFromHex(directoryId)
 
 	_, err := collection.UpdateByID(
 		c,
-		directoryObjectId,
+		directoryId,
 		bson.D{{Key: "$set", Value: directory.ToBsonNotEmpty()}},
 	)
 	if err != nil {
@@ -322,10 +273,10 @@ Return:
 	[dir1, dir2, dir3, ..., dir9]
 */
 func GetDirectoriesFromParent(
-	parentDirectory []primitive.ObjectID,
-	data map[primitive.ObjectID][]primitive.ObjectID,
-) []primitive.ObjectID {
-	var allDirectories []primitive.ObjectID
+	parentDirectory []string,
+	data map[string][]string,
+) []string {
+	var allDirectories []string
 
 	for _, childDirectory := range parentDirectory {
 		// append directory
@@ -341,7 +292,7 @@ func GetDirectoriesFromParent(
 }
 
 // Return a map with directories in format: parent_directory: [child_directory1, child_directory2, ...]
-func (h *Handler) FindAndMapDirectories(user string) map[primitive.ObjectID][]primitive.ObjectID {
+func (h *Handler) FindAndMapDirectories(user string) map[string][]string {
 	collection := h.Db.Collection("directories")
 
 	// Get all directories with user from claims, with existing parent_directory:
@@ -369,14 +320,14 @@ func (h *Handler) FindAndMapDirectories(user string) map[primitive.ObjectID][]pr
 		(parent and child directories are in ObjectID type for easier filtering)
 	*/
 
-	dict := make(map[primitive.ObjectID][]primitive.ObjectID, len(results))
+	dict := make(map[string][]string, len(results))
 	for _, result := range results {
-		resId := result["parent_directory"].(primitive.ObjectID)
+		resId := result["parent_directory"].(string)
 
 		if value, ok := dict[resId]; ok {
-			dict[resId] = append(value, result["_id"].(primitive.ObjectID))
+			dict[resId] = append(value, result["_id"].(string))
 		} else {
-			dict[resId] = []primitive.ObjectID{result["_id"].(primitive.ObjectID)}
+			dict[resId] = []string{result["_id"].(string)}
 		}
 	}
 
@@ -385,8 +336,8 @@ func (h *Handler) FindAndMapDirectories(user string) map[primitive.ObjectID][]pr
 
 func (h *Handler) DeleteDirectories(c *gin.Context) {
 	type RequestData struct {
-		Id        primitive.ObjectID `json:"id"`
-		AccessKey string             `json:"access_key"`
+		Id        string `json:"id"`
+		AccessKey string `json:"access_key"`
 	}
 	directories := make([]RequestData, 0)
 
@@ -394,21 +345,19 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 		fmt.Println(err)
 	}
 
-	directoriesToDelete := make([]primitive.ObjectID, 0, len(directories))
-	directoryStringList := make([]string, 0, len(directories))
+	directoriesToDelete := make([]string, 0, len(directories))
 	fileDeleteQuery := make([]string, 0, len(directories))
 
 	for _, directory := range directories {
-		if isValid := auth.ValidateAccessKeyWithId(directory.AccessKey, directory.Id.Hex()); !isValid {
+		if isValid := auth.ValidateAccessKeyWithId(directory.AccessKey, directory.Id); !isValid {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "invalid access key for directory: " + directory.Id.Hex(),
+				"error": "invalid access key for directory: " + directory.Id,
 			})
 			return
 		}
 
 		directoriesToDelete = append(directoriesToDelete, directory.Id)
-		directoryStringList = append(directoryStringList, directory.Id.Hex())
-		fileDeleteQuery = append(fileDeleteQuery, "parent_directory = "+directory.Id.Hex())
+		fileDeleteQuery = append(fileDeleteQuery, "parent_directory = "+directory.Id)
 	}
 
 	claims := auth.ExtractClaimsFromContext(c)
@@ -416,7 +365,7 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 
 	directoryMap := h.FindAndMapDirectories(user)
 
-	var directoryList []primitive.ObjectID
+	var directoryList []string
 
 	for _, val := range directoriesToDelete {
 		directoryList = append(
@@ -431,7 +380,6 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 	_, err := collection.DeleteMany(
 		context.TODO(),
 		bson.D{
-			{Key: "user", Value: claims.Id},
 			{Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryList}}},
 		},
 	)
@@ -455,12 +403,12 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 
 	// Remove all directories (with files) from disk
 	for _, directory := range directoryList {
-		if err = os.RemoveAll(files.UploadDestination + directory.Hex()); err != nil {
+		if err = os.RemoveAll(files.UploadDestination + directory); err != nil {
 			log.Panic(err)
 		}
 	}
 
-	if _, err = h.SearchDb.Index("directories").DeleteDocuments(directoryStringList); err != nil {
+	if _, err = h.SearchDb.Index("directories").DeleteDocuments(directoriesToDelete); err != nil {
 		log.Println(err)
 	}
 
@@ -471,111 +419,20 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *Handler) DeleteDirectory(c *gin.Context) {
-	// Verify permissions from access key
-	directoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
-	if !helper.ArrayContains(directoryAccessKey.Permissions, auth.PermissionDelete) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "no permission to delete this directory",
-		})
-		return
-	}
-
-	claims := auth.ExtractClaimsFromContext(c)
-	user := claims.Id
-	directoryId := c.Param("id")
-
-	collection := h.Db.Collection("directories")
-
-	// Get all directories with user from claims, with existing parent_directory:
-	// everything except trash, main directory and potential future directories that can't be deleted anyway
-	cursor, err := collection.Find(
-		context.TODO(),
-		bson.D{
-			{Key: "user", Value: user},
-			{Key: "parent_directory", Value: bson.D{{Key: "$exists", Value: true}}},
-		},
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	var results []bson.M
-	if err = cursor.All(context.TODO(), &results); err != nil {
-		log.Panic(err)
-	}
-
-	/*
-		Map folders into hash map in format:
-		parent_directory: [child_directory1, child_directory2, ...]
-
-		(parent and child directories are in ObjectID type for easier filtering)
-	*/
-
-	dict := make(map[primitive.ObjectID][]primitive.ObjectID, len(results))
-	for _, result := range results {
-		resId := result["parent_directory"].(primitive.ObjectID)
-
-		if value, ok := dict[resId]; ok {
-			dict[resId] = append(value, result["_id"].(primitive.ObjectID))
-		} else {
-			dict[resId] = []primitive.ObjectID{result["_id"].(primitive.ObjectID)}
-		}
-	}
-
-	// Convert string id to ObjectID
-	dirIdObjectId, _ := primitive.ObjectIDFromHex(directoryId)
-
-	// Create list of directories to delete: directory to delete and all directories inside
-	directoryList := GetDirectoriesFromParent(dict[dirIdObjectId], dict)
-	directoryList = append(directoryList, dirIdObjectId)
-
-	// Remove all file documents from DB
-	collection = h.Db.Collection("files")
-
-	_, err = collection.DeleteMany(
-		context.TODO(),
-		bson.D{{Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryList}}}},
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	// Remove all directories documents from DB
-	collection = h.Db.Collection("directories")
-
-	_, err = collection.DeleteMany(
-		context.TODO(),
-		bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: directoryList}}}},
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	// Remove all directories (with files) from disk
-	for _, directory := range directoryList {
-		if err = os.RemoveAll(files.UploadDestination + directory.Hex()); err != nil {
-			log.Panic(err)
-		}
-	}
-
-	c.Status(http.StatusNoContent)
-}
-
 func validateDirectory(
 	c *gin.Context,
 	accessKey string,
-	directoryId primitive.ObjectID,
-	directoryToMove primitive.ObjectID,
-	directoryTree map[primitive.ObjectID][]primitive.ObjectID,
+	directoryId string,
+	directoryToMove string,
+	directoryTree map[string][]string,
 ) bool {
 	// Validate access key and check if this access key is for that specific directory
 	// Check if access key allows user to modify (check permissions)
 	// Check if destination folder is not in source folder (can't move directory to itself)
 	if accessKeyClaims, valid := auth.ValidateAccessKey(accessKey); !valid ||
-		accessKeyClaims.Id != directoryId.Hex() {
+		accessKeyClaims.Id != directoryId {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid access key for directory: " + directoryId.Hex(),
+			"error": "invalid access key for directory: " + directoryId,
 		})
 		return false
 	} else if !auth.ValidatePermissionsFromClaims(accessKeyClaims, auth.PermissionModify) {
@@ -585,7 +442,7 @@ func validateDirectory(
 		return false
 	} else if helper.ArrayContains(GetDirectoriesFromParent(directoryTree[directoryId], directoryTree), directoryToMove) || directoryId == directoryToMove {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "cannot move directory " + directoryId.Hex() + " to itself",
+			"error": "cannot move directory " + directoryId + " to itself",
 		})
 		return false
 	}
@@ -599,12 +456,12 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	directoryTree := h.FindAndMapDirectories(claims.Id)
 
 	type RequestData struct {
-		Id        primitive.ObjectID `json:"id"`
-		AccessKey string             `json:"access_key"`
+		Id        string `json:"id"`
+		AccessKey string `json:"access_key"`
 		Items     []struct {
-			Id              primitive.ObjectID `json:"id"`
-			AccessKey       string             `json:"access_key"`
-			ParentDirectory primitive.ObjectID `json:"parent_directory"` // this is optional, this value will be set as previous_parent_directory, useful for restoring from trash
+			Id              string `json:"id"`
+			AccessKey       string `json:"access_key"`
+			ParentDirectory string `json:"parent_directory"` // this is optional, this value will be set as previous_parent_directory, useful for restoring from trash
 		}
 	}
 
@@ -616,9 +473,9 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 	// Validate access key and check if the access key is for that specific directory
 	directoryClaims, valid := auth.ValidateAccessKey(requestData.AccessKey)
-	if !valid || directoryClaims.Id != requestData.Id.Hex() {
+	if !valid || directoryClaims.Id != requestData.Id {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid access key for directory: " + requestData.Id.Hex(),
+			"error": "invalid access key for directory: " + requestData.Id,
 		})
 		return
 	}
@@ -627,7 +484,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	// used to construct search database update query
 	searchDbQueryList := make([]map[string]interface{}, 0, len(requestData.Items))
 
-	directoryObjectIdList := make([]primitive.ObjectID, 0, len(requestData.Items))
+	directoryObjectIdList := make([]string, 0, len(requestData.Items))
 
 	// Validate each file and add them to searchDbQueryList and directoryObjectIdList
 	for _, directory := range requestData.Items {
@@ -636,12 +493,12 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		}
 
 		searchDbQueryList = append(searchDbQueryList, map[string]interface{}{
-			"_id":              directory.Id.Hex(),
-			"parent_directory": requestData.Id.Hex(),
+			"_id":              directory.Id,
+			"parent_directory": requestData.Id,
 		})
 
 		// Set parentDirectory value if it's provided in RequestData
-		if !directory.ParentDirectory.IsZero() {
+		if directory.ParentDirectory != "" {
 			dbOperation := mongo.NewUpdateOneModel()
 			// Directories from list in request body AND having parent_directory as directory ID from list
 			// This removes possibility of user providing invalid parent directory
@@ -767,175 +624,4 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"updated": res.ModifiedCount,
 	})
-}
-
-func (h *Handler) CopyDirectories(c *gin.Context) {
-	type RequestData struct {
-		SourceAccessKey      string               `json:"source_access_key"`
-		DestinationAccessKey string               `json:"destination_access_key"`
-		Directories          []primitive.ObjectID `json:"directories"`
-	}
-
-	var data RequestData
-
-	if err := c.MustBindWith(&data, binding.JSON); err != nil {
-		return
-	}
-
-	sourceAccessKey, isValid := auth.ValidateAccessKey(data.SourceAccessKey)
-	if !isValid {
-		c.Status(http.StatusForbidden)
-		return
-	}
-
-	destinationAccessKey, isValid := auth.ValidateAccessKey(data.DestinationAccessKey)
-	if !isValid {
-		c.Status(http.StatusForbidden)
-		return
-	}
-
-	SOURCE_DIR_ID := sourceAccessKey.Id
-	SOURCE_DIR_OBJ_ID, err := primitive.ObjectIDFromHex(SOURCE_DIR_ID)
-	if err != nil {
-		c.Status(http.StatusBadRequest)
-		log.Println(err)
-		return
-	}
-	DESTINATION_DIR_ID := destinationAccessKey.Id
-
-	DESTINATION_DIR_OBJ_ID, err := primitive.ObjectIDFromHex(DESTINATION_DIR_ID)
-	if err != nil {
-		c.Status(http.StatusBadRequest)
-		log.Println(err)
-		return
-	}
-
-	filter := bson.D{
-		{
-			Key: "_id", Value: bson.D{
-				{Key: "$in", Value: data.Directories},
-			},
-		},
-		{Key: "parent_directory", Value: SOURCE_DIR_OBJ_ID},
-	}
-
-	directories, err := models.FindDirectoriesByFilter[models.Directory](h.Db, filter)
-	if err != nil || len(directories) != len(data.Directories) {
-		if err != nil {
-			log.Panic(err)
-			return
-		}
-
-		c.Status(http.StatusBadRequest)
-		fmt.Println(directories)
-		log.Println("Invalid result length")
-		return
-	}
-
-	for idx := range directories {
-		directories[idx].Id = ""
-		directories[idx].PreviousParentDirectory = primitive.NilObjectID
-		directories[idx].ParentDirectory = DESTINATION_DIR_OBJ_ID
-	}
-
-	opts := options.InsertMany().SetOrdered(true)
-	insertResult, err := h.Db.Collection("directories").
-		InsertMany(context.TODO(), models.DirectoriesToBsonNotEmpty(directories), opts)
-	if err != nil {
-		log.Panic(err)
-		return
-	}
-
-	idMap := make(map[primitive.ObjectID]primitive.ObjectID, len(insertResult.InsertedIDs))
-	for idx, id := range data.Directories {
-		idMap[id] = insertResult.InsertedIDs[idx].(primitive.ObjectID)
-	}
-
-	var updateOperations []mongo.WriteModel
-
-	for idx, resultId := range insertResult.InsertedIDs {
-		newAccessKey, err := auth.GenerateDirectoryAccessKey(
-			resultId.(primitive.ObjectID).Hex(),
-			auth.AllDirectoryPermissions,
-		)
-		if err != nil {
-			log.Panic(err)
-			return
-		}
-
-		directories[idx].AccessKey = newAccessKey
-		directories[idx].Id = resultId.(primitive.ObjectID).Hex()
-
-		dbOperation := mongo.NewUpdateOneModel()
-		dbOperation.SetFilter(bson.M{
-			"_id": resultId.(primitive.ObjectID),
-		})
-
-		dbOperation.SetUpdate(bson.M{
-			"$set": bson.M{
-				"access_key": newAccessKey,
-			},
-		})
-
-		updateOperations = append(updateOperations, dbOperation)
-	}
-
-	_, err = h.Db.Collection("directories").BulkWrite(context.TODO(), updateOperations)
-	if err != nil {
-		h.Db.Collection("directories").
-			DeleteMany(context.TODO(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: insertResult.InsertedIDs}}}})
-	}
-
-	filter = bson.D{
-		{
-			Key: "parent_directory", Value: bson.D{
-				{Key: "$in", Value: data.Directories},
-			},
-		},
-	}
-
-	findOpts := options.Find().SetSort(bson.D{{Key: "parent_directory", Value: 1}})
-	filesToCopy, err := models.FindFilesByFilter[models.File](h.Db, filter, findOpts)
-	if err != nil {
-		log.Panic(err)
-		return
-	}
-
-	previousIdList := make([]primitive.ObjectID, 0, len(filesToCopy))
-
-	for idx, file := range filesToCopy {
-		previousIdList = append(previousIdList, file.Id)
-
-		filesToCopy[idx].Id = primitive.NilObjectID
-		filesToCopy[idx].ParentDirectory = idMap[file.ParentDirectory]
-	}
-
-	fileInsertResult, err := h.Db.Collection("files").
-		InsertMany(context.TODO(), models.FilesToBsonNotEmpty(filesToCopy), opts)
-	if err != nil {
-		log.Panic(err)
-		return
-	}
-
-	for idx := range insertResult.InsertedIDs {
-		sourceDirectory := files.UploadDestination + data.Directories[idx].Hex()
-		destinationDirectory := files.UploadDestination + insertResult.InsertedIDs[idx].(primitive.ObjectID).Hex()
-		if err := cp.Copy(sourceDirectory, destinationDirectory); err != nil {
-			log.Panic(err)
-			return
-		}
-
-	}
-
-	for idx, file := range filesToCopy {
-		if err := os.Rename(
-			files.UploadDestination+file.ParentDirectory.Hex()+"/"+previousIdList[idx].Hex(),
-			files.UploadDestination+file.ParentDirectory.Hex()+"/"+fileInsertResult.InsertedIDs[idx].(primitive.ObjectID).Hex(),
-		); err != nil {
-			log.Panic(err)
-			return
-		}
-	}
-
-	c.JSON(http.StatusOK, directories)
 }
