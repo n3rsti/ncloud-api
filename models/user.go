@@ -5,8 +5,9 @@ import (
 )
 
 type User struct {
-	Username       string `json:"username"                   validate:"min=1"`
-	Password       string `json:"password,omitempty"         validate:"min=5"`
+	Id             string `json:"id"                         bson:"_id"`
+	Username       string `json:"username"                              validate:"min=1"`
+	Password       string `json:"password,omitempty"                    validate:"min=5"`
 	TrashAccessKey string `json:"trash_access_key,omitempty"`
 }
 
@@ -15,5 +16,6 @@ func (u *User) ToBSON() bson.D {
 		{Key: "username", Value: u.Username},
 		{Key: "password", Value: u.Password},
 		{Key: "trash_access_key", Value: u.TrashAccessKey},
+		{Key: "_id", Value: u.Id},
 	}
 }

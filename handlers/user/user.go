@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/meilisearch/meilisearch-go"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/validator.v2"
 
@@ -39,7 +38,30 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	user.TrashAccessKey = ""
+	userId, _ := uuid.NewUUID()
+	user.Id = userId.String()
+
+	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
+
+	mainId, _ := uuid.NewUUID()
+	accessKey, _ := auth.GenerateDirectoryAccessKey(mainId.String(), permissions)
+	mainDir := models.Directory{
+		Name:      "Main",
+		User:      userId.String(),
+		Id:        mainId.String(),
+		AccessKey: accessKey,
+	}
+
+	trashId, _ := uuid.NewUUID()
+	trashAccessKey, _ := auth.GenerateDirectoryAccessKey(trashId.String(), permissions)
+	trashDir := models.Directory{
+		Name:      "Trash",
+		User:      userId.String(),
+		Id:        trashId.String(),
+		AccessKey: trashAccessKey,
+	}
+
+	user.TrashAccessKey = trashAccessKey
 
 	if err := validator.Validate(user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -60,33 +82,13 @@ func (h *Handler) Register(c *gin.Context) {
 
 	user.Password = passwordHash
 
-	userInsertResult, err := collection.InsertOne(c, user.ToBSON())
+	_, err = collection.InsertOne(c, user.ToBSON())
 	if err != nil {
 		log.Println("Error during DB operation")
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "user already exists",
 		})
 		return
-	}
-
-	permissions := []string{auth.PermissionRead, auth.PermissionUpload}
-
-	mainId, _ := uuid.NewUUID()
-	accessKey, _ := auth.GenerateDirectoryAccessKey(mainId.String(), permissions)
-	mainDir := models.Directory{
-		Name:      "Main",
-		User:      userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
-		Id:        mainId.String(),
-		AccessKey: accessKey,
-	}
-
-	trashId, _ := uuid.NewUUID()
-	trashAccessKey, _ := auth.GenerateDirectoryAccessKey(trashId.String(), permissions)
-	trashDir := models.Directory{
-		Name:      "Trash",
-		User:      userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
-		Id:        trashId.String(),
-		AccessKey: trashAccessKey,
 	}
 
 	collection = h.Db.Collection("directories")
@@ -104,13 +106,6 @@ func (h *Handler) Register(c *gin.Context) {
 		log.Println(err)
 	}
 
-	collection = h.Db.Collection("user")
-	collection.UpdateByID(c, userInsertResult.InsertedID,
-		bson.D{{Key: "$set", Value: bson.D{
-			{Key: "trash_access_key", Value: trashAccessKey},
-		}}},
-	)
-
 	// Remove password so it won't be included in response
 	user.Password = ""
 
@@ -118,7 +113,7 @@ func (h *Handler) Register(c *gin.Context) {
 	if _, err := h.SearchDb.Index("directories").AddDocuments(&SearchDatabaseData{
 		Id:   mainId.String(),
 		Name: "Main",
-		User: userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
+		User: userId.String(),
 	}); err != nil {
 		log.Println(err)
 	}
@@ -126,7 +121,7 @@ func (h *Handler) Register(c *gin.Context) {
 	if _, err := h.SearchDb.Index("directories").AddDocuments(&SearchDatabaseData{
 		Id:   trashId.String(),
 		Name: "Trash",
-		User: userInsertResult.InsertedID.(primitive.ObjectID).Hex(),
+		User: userId.String(),
 	}); err != nil {
 		log.Println(err)
 	}
@@ -172,7 +167,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	userId := result["_id"].(primitive.ObjectID).Hex()
+	userId := result["_id"].(string)
 
 	accessToken, refreshToken, err := auth.GenerateTokens(userId)
 	if err != nil {
