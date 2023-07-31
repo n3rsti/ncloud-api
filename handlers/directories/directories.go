@@ -338,7 +338,6 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 	}
 
 	directoriesToDelete := make([]string, 0, len(directories))
-	fileDeleteQuery := make([]string, 0, len(directories))
 
 	for _, directory := range directories {
 		if isValid := auth.ValidateAccessKeyWithId(directory.AccessKey, directory.Id); !isValid {
@@ -349,7 +348,6 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 		}
 
 		directoriesToDelete = append(directoriesToDelete, directory.Id)
-		fileDeleteQuery = append(fileDeleteQuery, "parent_directory = "+directory.Id)
 	}
 
 	claims := auth.ExtractClaimsFromContext(c)
@@ -402,6 +400,11 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 
 	if _, err = h.SearchDb.Index("directories").DeleteDocuments(directoriesToDelete); err != nil {
 		log.Println(err)
+	}
+
+	fileDeleteQuery := make([]string, 0, len(directoryList))
+	for _, dirId := range directoryList {
+		fileDeleteQuery = append(fileDeleteQuery, "parent_directory = "+dirId)
 	}
 
 	if _, err := h.SearchDb.Index("files").DeleteDocumentsByFilter(strings.Join(fileDeleteQuery, " OR ")); err != nil {
