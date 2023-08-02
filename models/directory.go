@@ -12,9 +12,9 @@ import (
 )
 
 type Directory struct {
-	Id                      string `json:"id"`
-	Name                    string `json:"name"                                validate:"max=100"`
-	ParentDirectory         string `json:"parent_directory"`
+	Id                      string `json:"id"                                  bson:"_id"`
+	Name                    string `json:"name"                                                        validate:"max=100"`
+	ParentDirectory         string `json:"parent_directory"                    bson:"parent_directory"`
 	PreviousParentDirectory string `json:"previous_parent_directory,omitempty"`
 	User                    string `json:"user"`
 	AccessKey               string `json:"access_key"`
@@ -88,6 +88,15 @@ func FindDirectoriesByFilter[T interface{}](
 }
 
 func DirectoriesToBsonNotEmpty(directories []Directory) []interface{} {
+	result := make([]interface{}, 0, len(directories))
+	for _, directory := range directories {
+		result = append(result, directory.ToBsonNotEmpty())
+	}
+
+	return result
+}
+
+func DirectoryPointersToBsonNotEmpty(directories []*Directory) []interface{} {
 	result := make([]interface{}, 0, len(directories))
 	for _, directory := range directories {
 		result = append(result, directory.ToBsonNotEmpty())

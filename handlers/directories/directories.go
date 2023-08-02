@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
 	"github.com/meilisearch/meilisearch-go"
+	cp "github.com/otiai10/copy"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 
@@ -280,6 +281,25 @@ func GetDirectoriesFromParent(
 		allDirectories = append(
 			allDirectories,
 			GetDirectoriesFromParent(data[childDirectory], data)...)
+	}
+
+	return allDirectories
+}
+
+func GetDirectoriesFromParentAsObject(
+	parentDirectory []*models.Directory,
+	data map[string][]*models.Directory,
+) []*models.Directory {
+	var allDirectories []*models.Directory
+
+	for idx, childDirectory := range parentDirectory {
+		// append directory
+		allDirectories = append(allDirectories, parentDirectory[idx])
+
+		// append directory children
+		allDirectories = append(
+			allDirectories,
+			GetDirectoriesFromParentAsObject(data[childDirectory.Id], data)...)
 	}
 
 	return allDirectories
@@ -619,4 +639,129 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"updated": res.ModifiedCount,
 	})
+}
+
+func (h *Handler) CopyDirectories(c *gin.Context) {
+	type RequestData struct {
+		Destination string   `json:"destination"`
+		Directories []string `json:"directories"`
+	}
+
+	var data RequestData
+
+	if err := c.MustBindWith(&data, binding.JSON); err != nil {
+		return
+	}
+
+	user := auth.ExtractClaimsFromContext(c).Id
+
+	filter := bson.D{
+		{Key: "user", Value: user},
+		{Key: "parent_directory", Value: bson.D{{Key: "$exists", Value: true}}},
+	}
+
+	directories, err := models.FindDirectoriesByFilter[models.Directory](h.Db, filter)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	topDirectories := make([]*models.Directory, 0, len(data.Directories))
+
+	dict := make(map[string][]*models.Directory, len(directories))
+	for idx, directory := range directories {
+		if helper.ArrayContains(data.Directories, directory.Id) {
+			topDirectories = append(topDirectories, &directories[idx])
+		}
+		resId := directory.ParentDirectory
+
+		if value, ok := dict[resId]; ok {
+			dict[resId] = append(value, &directories[idx])
+		} else {
+			dict[resId] = []*models.Directory{&directories[idx]}
+		}
+
+	}
+
+	directoriesToCopy := GetDirectoriesFromParentAsObject(topDirectories, dict)
+	directoryIdList := make([]string, 0, len(directoriesToCopy))
+
+	directoryIdMap := make(map[string]string, len(directoriesToCopy))
+
+	for _, directory := range directoriesToCopy {
+		directoryIdList = append(directoryIdList, directory.Id)
+
+		newId := uuid.New()
+
+		directoryIdMap[newId.String()] = directory.Id
+		directoryIdMap[directory.Id] = newId.String()
+
+		newAccessKey, _ := auth.GenerateDirectoryAccessKey(
+			newId.String(),
+			auth.AllDirectoryPermissions,
+		)
+
+		children, exists := dict[directory.Id]
+		if exists {
+			for _, child := range children {
+				child.ParentDirectory = newId.String()
+			}
+		}
+
+		directory.Id = newId.String()
+		directory.AccessKey = newAccessKey
+	}
+
+	for _, directory := range topDirectories {
+		directory.ParentDirectory = data.Destination
+	}
+
+	filter = bson.D{
+		{Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryIdList}}},
+	}
+
+	filesToCopy, err := models.FindFilesByFilter[models.File](h.Db, filter)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	fileIdMap := make(map[string]string, len(filesToCopy))
+	for idx, file := range filesToCopy {
+		newId := uuid.New()
+
+		fileIdMap[newId.String()] = file.Id
+
+		filesToCopy[idx].Id = newId.String()
+		filesToCopy[idx].ParentDirectory = directoryIdMap[file.ParentDirectory]
+		filesToCopy[idx].PreviousParentDirectory = ""
+	}
+
+	if _, err := h.Db.Collection("directories").InsertMany(context.TODO(), models.DirectoryPointersToBsonNotEmpty(directoriesToCopy)); err != nil {
+		log.Panic(err)
+		return
+	}
+
+	if _, err := h.Db.Collection("files").InsertMany(context.TODO(), models.FilesToBsonNotEmpty(filesToCopy)); err != nil {
+		log.Panic(err)
+		return
+	}
+
+	for _, dir := range directoriesToCopy {
+		sourceDirectory := files.UploadDestination + directoryIdMap[dir.Id]
+		destinationDirectory := files.UploadDestination + dir.Id
+		if err := cp.Copy(sourceDirectory, destinationDirectory); err != nil {
+			log.Panic(err)
+			return
+		}
+	}
+
+	for _, file := range filesToCopy {
+		source := files.UploadDestination + file.ParentDirectory + "/" + fileIdMap[file.Id]
+		destination := files.UploadDestination + file.ParentDirectory + "/" + file.Id
+
+		if err := os.Rename(source, destination); err != nil {
+			log.Panic(err)
+		}
+	}
 }
