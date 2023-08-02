@@ -673,12 +673,12 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 		if helper.ArrayContains(data.Directories, directory.Id) {
 			topDirectories = append(topDirectories, &directories[idx])
 		}
-		resId := directory.ParentDirectory
+		dirId := directory.ParentDirectory
 
-		if value, ok := dict[resId]; ok {
-			dict[resId] = append(value, &directories[idx])
+		if value, ok := dict[dirId]; ok {
+			dict[dirId] = append(value, &directories[idx])
 		} else {
-			dict[resId] = []*models.Directory{&directories[idx]}
+			dict[dirId] = []*models.Directory{&directories[idx]}
 		}
 
 	}
@@ -764,4 +764,6 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 			log.Panic(err)
 		}
 	}
+
+	c.JSON(http.StatusOK, topDirectories)
 }
