@@ -208,6 +208,11 @@ func (h *Handler) GetFile(c *gin.Context) {
 	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
 	directory, _ := auth.ValidateAccessKey(directoryAccessKey)
 
+	if _, err := uuid.Parse(fileId); err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
 	c.File(UploadDestination + directory.Id + "/" + fileId)
 }
 
