@@ -13,7 +13,7 @@ import (
 
 type Directory struct {
 	Id                      string `json:"id"                                  bson:"_id"`
-	Name                    string `json:"name"                                                        validate:"max=100"`
+	Name                    string `json:"name"                                                        validate:"min=1,max=100"`
 	ParentDirectory         string `json:"parent_directory"                    bson:"parent_directory"`
 	PreviousParentDirectory string `json:"previous_parent_directory,omitempty"`
 	User                    string `json:"user"`

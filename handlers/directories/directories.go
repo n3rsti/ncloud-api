@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
 	"github.com/meilisearch/meilisearch-go"
 	cp "github.com/otiai10/copy"
@@ -120,7 +119,6 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	// Attempt to bind JSON directory to Directory model
 	var directory models.Directory
 	if err := c.BindJSON(&directory); err != nil {
-		c.Status(http.StatusBadRequest)
 		return
 	}
 
@@ -128,13 +126,6 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	if err := directory.Validate(); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err,
-		})
-		return
-	}
-
-	if directory.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "empty name or parent directory",
 		})
 		return
 	}
@@ -197,10 +188,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 
 	var directory models.Directory
 
-	if err := c.ShouldBindJSON(&directory); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "couldn't bind json data to object",
-		})
+	if err := c.BindJSON(&directory); err != nil {
 		return
 	}
 
@@ -229,7 +217,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 		bson.D{{Key: "$set", Value: directory.ToBsonNotEmpty()}},
 	)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		c.Status(http.StatusNotFound)
 		return
 	}
@@ -267,63 +255,54 @@ Return:
 
 	[dir1, dir2, dir3, ..., dir9]
 */
-func GetDirectoriesFromParent(
-	parentDirectory []string,
-	data map[string][]string,
+func GetDirectoriesFromParents(
+	parentDirectories []string,
+	children map[string][]string,
 ) []string {
 	var allDirectories []string
 
-	for _, childDirectory := range parentDirectory {
+	for _, parentDirectory := range parentDirectories {
 		// append directory
-		allDirectories = append(allDirectories, childDirectory)
+		allDirectories = append(allDirectories, parentDirectory)
 
 		// append directory children
 		allDirectories = append(
 			allDirectories,
-			GetDirectoriesFromParent(data[childDirectory], data)...)
+			GetDirectoriesFromParents(children[parentDirectory], children)...)
 	}
 
 	return allDirectories
 }
 
-func GetDirectoriesFromParentAsObject(
-	parentDirectory []*models.Directory,
-	data map[string][]*models.Directory,
+func GetDirectoriesFromParentsAsPointers(
+	parentDirectories []*models.Directory,
+	children map[string][]*models.Directory,
 ) []*models.Directory {
 	var allDirectories []*models.Directory
 
-	for idx, childDirectory := range parentDirectory {
+	for idx, parentDirectory := range parentDirectories {
 		// append directory
-		allDirectories = append(allDirectories, parentDirectory[idx])
+		allDirectories = append(allDirectories, parentDirectories[idx])
 
 		// append directory children
 		allDirectories = append(
 			allDirectories,
-			GetDirectoriesFromParentAsObject(data[childDirectory.Id], data)...)
+			GetDirectoriesFromParentsAsPointers(children[parentDirectory.Id], children)...)
 	}
 
 	return allDirectories
 }
 
-// Return a map with directories in format: parent_directory: [child_directory1, child_directory2, ...]
+// Return a children map from user with all directories in format: parent_directory: [child_directory1, child_directory2, ...]
 func (h *Handler) FindAndMapDirectories(user string) map[string][]string {
-	collection := h.Db.Collection("directories")
-
 	// Get all directories with user from claims, with existing parent_directory:
 	// everything except trash, main directory and potential future directories that can't be deleted anyway
-	cursor, err := collection.Find(
-		context.TODO(),
-		bson.D{
-			{Key: "user", Value: user},
-			{Key: "parent_directory", Value: bson.D{{Key: "$exists", Value: true}}},
-		},
-	)
-	if err != nil {
-		log.Panic(err)
+	filter := bson.D{
+		{Key: "user", Value: user},
+		{Key: "parent_directory", Value: bson.D{{Key: "$exists", Value: true}}},
 	}
-
-	var results []bson.M
-	if err = cursor.All(context.TODO(), &results); err != nil {
+	directories, err := models.FindDirectoriesByFilter[models.Directory](h.Db, filter)
+	if err != nil {
 		log.Panic(err)
 	}
 
@@ -332,18 +311,18 @@ func (h *Handler) FindAndMapDirectories(user string) map[string][]string {
 		parent_directory: [child_directory1, child_directory2, ...]
 	*/
 
-	dict := make(map[string][]string, len(results))
-	for _, result := range results {
-		resId := result["parent_directory"].(string)
+	childrenMap := make(map[string][]string, len(directories))
+	for _, directory := range directories {
+		directoryParentId := directory.ParentDirectory
 
-		if value, ok := dict[resId]; ok {
-			dict[resId] = append(value, result["_id"].(string))
+		if value, ok := childrenMap[directoryParentId]; ok {
+			childrenMap[directoryParentId] = append(value, directory.Id)
 		} else {
-			dict[resId] = []string{result["_id"].(string)}
+			childrenMap[directoryParentId] = []string{directory.Id}
 		}
 	}
 
-	return dict
+	return childrenMap
 }
 
 func (h *Handler) DeleteDirectories(c *gin.Context) {
@@ -353,8 +332,9 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 	}
 	directories := make([]RequestData, 0)
 
-	if err := c.MustBindWith(&directories, binding.JSON); err != nil {
-		fmt.Println(err)
+	if err := c.BindJSON(&directories); err != nil {
+		log.Println(err)
+		return
 	}
 
 	directoriesToDelete := make([]string, 0, len(directories))
@@ -375,12 +355,14 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 
 	directoryMap := h.FindAndMapDirectories(user)
 
-	var directoryList []string
+	// We use len(directoryMap), even though it's not exactly accurate, but this is the highest amount we can estimate
+	// It will reduce a little bit of work caused by appending to already full slice
+	directoryList := make([]string, 0, len(directoryMap))
 
 	for _, val := range directoriesToDelete {
 		directoryList = append(
 			directoryList,
-			GetDirectoriesFromParent(directoryMap[val], directoryMap)...)
+			GetDirectoriesFromParents(directoryMap[val], directoryMap)...)
 		directoryList = append(directoryList, val)
 	}
 
@@ -442,23 +424,22 @@ func validateDirectory(
 	directoryTree map[string][]string,
 ) bool {
 	// Validate access key and check if this access key is for that specific directory
+	accessKeyClaims, IS_INVALID_ACCESS_KEY := auth.ValidateAccessKey(accessKey)
+	IS_FOR_THIS_DIRECTORY := accessKeyClaims.Id == directoryId
+
 	// Check if access key allows user to modify (check permissions)
+	VALID_PERMISSIONS := auth.ValidatePermissionsFromClaims(accessKeyClaims, auth.PermissionModify)
+
 	// Check if destination folder is not in source folder (can't move directory to itself)
-	if accessKeyClaims, valid := auth.ValidateAccessKey(accessKey); !valid ||
-		accessKeyClaims.Id != directoryId {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid access key for directory: " + directoryId,
-		})
-		return false
-	} else if !auth.ValidatePermissionsFromClaims(accessKeyClaims, auth.PermissionModify) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "no permission to modify this directory",
-		})
-		return false
-	} else if helper.ArrayContains(GetDirectoriesFromParent(directoryTree[directoryId], directoryTree), directoryToMove) || directoryId == directoryToMove {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "cannot move directory " + directoryId + " to itself",
-		})
+	IS_INSIDE_OF_ITSELF := helper.ArrayContains(
+		GetDirectoriesFromParents(directoryTree[directoryId], directoryTree),
+		directoryToMove,
+	) ||
+		directoryId == directoryToMove
+
+	if IS_INVALID_ACCESS_KEY || !VALID_PERMISSIONS || IS_INSIDE_OF_ITSELF ||
+		!IS_FOR_THIS_DIRECTORY {
+		c.Status(http.StatusBadRequest)
 		return false
 	}
 	return true
@@ -471,45 +452,46 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	directoryTree := h.FindAndMapDirectories(claims.Id)
 
 	type RequestData struct {
-		Id        string `json:"id"`
-		AccessKey string `json:"access_key"`
-		Items     []struct {
+		DestinationId        string `json:"id"`
+		DestinationAccessKey string `json:"access_key"`
+		Items                []struct {
 			Id              string `json:"id"`
 			AccessKey       string `json:"access_key"`
 			ParentDirectory string `json:"parent_directory"` // this is optional, this value will be set as previous_parent_directory, useful for restoring from trash
 		}
 	}
 
-	var requestData RequestData
+	var data RequestData
 
-	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
+	if err := c.BindJSON(&data); err != nil {
 		log.Println(err)
+		return
 	}
 
 	// Validate access key and check if the access key is for that specific directory
-	directoryClaims, valid := auth.ValidateAccessKey(requestData.AccessKey)
-	if !valid || directoryClaims.Id != requestData.Id {
+	directoryClaims, valid := auth.ValidateAccessKey(data.DestinationAccessKey)
+	if !valid || directoryClaims.Id != data.DestinationId {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid access key for directory: " + requestData.Id,
+			"error": "invalid access key for directory: " + data.DestinationId,
 		})
 		return
 	}
 
 	// map in format {"_id": "directoryId", "parent_directory": "ID of destination directory"}
 	// used to construct search database update query
-	searchDbQueryList := make([]map[string]interface{}, 0, len(requestData.Items))
+	searchDbQueryList := make([]map[string]interface{}, 0, len(data.Items))
 
-	directoryIdList := make([]string, 0, len(requestData.Items))
+	directoryIdList := make([]string, 0, len(data.Items))
 
 	// Validate each file and add them to searchDbQueryList and directoryIdList
-	for _, directory := range requestData.Items {
-		if isValidDirectory := validateDirectory(c, directory.AccessKey, directory.Id, requestData.Id, directoryTree); !isValidDirectory {
+	for _, directory := range data.Items {
+		if isValidDirectory := validateDirectory(c, directory.AccessKey, directory.Id, data.DestinationId, directoryTree); !isValidDirectory {
 			return
 		}
 
 		searchDbQueryList = append(searchDbQueryList, map[string]interface{}{
 			"_id":              directory.Id,
-			"parent_directory": requestData.Id,
+			"parent_directory": data.DestinationId,
 		})
 
 		// Set parentDirectory value if it's provided in RequestData
@@ -524,7 +506,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 			dbOperation.SetUpdate(bson.M{
 				"$set": bson.M{
-					"parent_directory":          requestData.Id,
+					"parent_directory":          data.DestinationId,
 					"previous_parent_directory": directory.ParentDirectory,
 				},
 			})
@@ -547,7 +529,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 		updateOperation.SetUpdate(bson.D{
 			{Key: "$set", Value: bson.D{
-				{Key: "parent_directory", Value: requestData.Id},
+				{Key: "parent_directory", Value: data.DestinationId},
 			}},
 		})
 
@@ -575,44 +557,38 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 		Directories []string `json:"directories"`
 	}
 
-	var requestData RequestData
+	var data RequestData
 
-	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "bad request format",
-		})
+	if err := c.BindJSON(&data); err != nil {
+		return
 	}
 
 	// List for search db update operation
-	searchDbQueryList := make([]map[string]interface{}, 0, len(requestData.Directories))
+	searchDbQueryList := make([]map[string]interface{}, 0, len(data.Directories))
 
-	dbFindResult := make([]bson.M, 0, len(requestData.Directories))
-
-	cursor, err := h.Db.Collection("directories").
-		Find(context.TODO(), bson.M{"_id": bson.M{"$in": requestData.Directories}})
+	filter := bson.M{"_id": bson.M{"$in": data.Directories}}
+	directories, err := models.FindDirectoriesByFilter[models.Directory](h.Db, filter)
 	if err != nil {
 		log.Panic(err)
-	}
-
-	if err = cursor.All(context.TODO(), &dbFindResult); err != nil {
-		log.Panic(err)
+		return
 	}
 
 	var dbUpdateOperations []mongo.WriteModel
 
-	for _, directory := range dbFindResult {
-		if directory["user"].(string) != userClaims.Id {
+	for _, directory := range directories {
+		if directory.User != userClaims.Id {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "no access for directory: " + directory["_id"].(string),
+				"error": "no access for directory: " + directory.Id,
 			})
+			return
 		}
 
-		if directory["previous_parent_directory"].(string) != "" {
+		if directory.PreviousParentDirectory != "" {
 			dbOperation := mongo.NewUpdateOneModel()
-			dbOperation.SetFilter(bson.M{"_id": directory["_id"]})
+			dbOperation.SetFilter(bson.M{"_id": directory.Id})
 			dbOperation.SetUpdate(bson.M{
 				"$set": bson.M{
-					"parent_directory":          directory["previous_parent_directory"],
+					"parent_directory":          directory.PreviousParentDirectory,
 					"previous_parent_directory": "",
 				},
 			})
@@ -620,8 +596,8 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 			dbUpdateOperations = append(dbUpdateOperations, dbOperation)
 
 			searchDbQueryList = append(searchDbQueryList, map[string]interface{}{
-				"_id":              directory["_id"].(string),
-				"parent_directory": directory["previous_parent_directory"].(string),
+				"_id":              directory.Id,
+				"parent_directory": directory.PreviousParentDirectory,
 			})
 		}
 
@@ -630,6 +606,7 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 	res, err := h.Db.Collection("directories").BulkWrite(context.TODO(), dbUpdateOperations)
 	if err != nil {
 		log.Panic(err)
+		return
 	}
 
 	if _, err := h.SearchDb.Index("directories").UpdateDocuments(searchDbQueryList); err != nil {
@@ -649,7 +626,7 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 
 	var data RequestData
 
-	if err := c.MustBindWith(&data, binding.JSON); err != nil {
+	if err := c.BindJSON(&data); err != nil {
 		return
 	}
 
@@ -668,28 +645,31 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 
 	topDirectories := make([]*models.Directory, 0, len(data.Directories))
 
-	dict := make(map[string][]*models.Directory, len(directories))
+	childrenMap := make(map[string][]*models.Directory, len(directories))
 	for idx, directory := range directories {
 		if helper.ArrayContains(data.Directories, directory.Id) {
 			topDirectories = append(topDirectories, &directories[idx])
 		}
-		dirId := directory.ParentDirectory
+		directoryParentId := directory.ParentDirectory
 
-		if value, ok := dict[dirId]; ok {
-			dict[dirId] = append(value, &directories[idx])
+		if value, ok := childrenMap[directoryParentId]; ok {
+			childrenMap[directoryParentId] = append(value, &directories[idx])
 		} else {
-			dict[dirId] = []*models.Directory{&directories[idx]}
+			childrenMap[directoryParentId] = []*models.Directory{&directories[idx]}
 		}
 
 	}
 
-	directoriesToCopy := GetDirectoriesFromParentAsObject(topDirectories, dict)
-	directoryIdList := make([]string, 0, len(directoriesToCopy))
+	directoriesToCopy := GetDirectoriesFromParentsAsPointers(topDirectories, childrenMap)
 
+	// Used to delete files by parent directory
+	filesParentList := make([]string, 0, len(directoriesToCopy))
+
+	// Store pair NEW -> OLD and OLD -> NEW for directory ID
 	directoryIdMap := make(map[string]string, len(directoriesToCopy))
 
 	for _, directory := range directoriesToCopy {
-		directoryIdList = append(directoryIdList, directory.Id)
+		filesParentList = append(filesParentList, directory.Id)
 
 		newId := uuid.New()
 
@@ -701,7 +681,7 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 			auth.AllDirectoryPermissions,
 		)
 
-		children, exists := dict[directory.Id]
+		children, exists := childrenMap[directory.Id]
 		if exists {
 			for _, child := range children {
 				child.ParentDirectory = newId.String()
@@ -717,32 +697,10 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 	}
 
 	filter = bson.D{
-		{Key: "parent_directory", Value: bson.D{{Key: "$in", Value: directoryIdList}}},
-	}
-
-	filesToCopy, err := models.FindFilesByFilter[models.File](h.Db, filter)
-	if err != nil {
-		log.Panic(err)
-		return
-	}
-
-	fileIdMap := make(map[string]string, len(filesToCopy))
-	for idx, file := range filesToCopy {
-		newId := uuid.New()
-
-		fileIdMap[newId.String()] = file.Id
-
-		filesToCopy[idx].Id = newId.String()
-		filesToCopy[idx].ParentDirectory = directoryIdMap[file.ParentDirectory]
-		filesToCopy[idx].PreviousParentDirectory = ""
+		{Key: "parent_directory", Value: bson.D{{Key: "$in", Value: filesParentList}}},
 	}
 
 	if _, err := h.Db.Collection("directories").InsertMany(context.TODO(), models.DirectoryPointersToBsonNotEmpty(directoriesToCopy)); err != nil {
-		log.Panic(err)
-		return
-	}
-
-	if _, err := h.Db.Collection("files").InsertMany(context.TODO(), models.FilesToBsonNotEmpty(filesToCopy)); err != nil {
 		log.Panic(err)
 		return
 	}
@@ -756,14 +714,37 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 		}
 	}
 
-	for _, file := range filesToCopy {
-		source := files.UploadDestination + file.ParentDirectory + "/" + fileIdMap[file.Id]
-		destination := files.UploadDestination + file.ParentDirectory + "/" + file.Id
-
-		if err := os.Rename(source, destination); err != nil {
-			log.Panic(err)
-		}
+	filesToCopy, err := models.FindFilesByFilter[models.File](h.Db, filter)
+	if err != nil {
+		log.Panic(err)
+		return
 	}
 
+	if len(filesToCopy) > 0 {
+		fileIdMap := make(map[string]string, len(filesToCopy))
+		for idx, file := range filesToCopy {
+			newId := uuid.New()
+
+			fileIdMap[newId.String()] = file.Id
+
+			filesToCopy[idx].Id = newId.String()
+			filesToCopy[idx].ParentDirectory = directoryIdMap[file.ParentDirectory]
+			filesToCopy[idx].PreviousParentDirectory = ""
+		}
+
+		if _, err := h.Db.Collection("files").InsertMany(context.TODO(), models.FilesToBsonNotEmpty(filesToCopy)); err != nil {
+			log.Panic(err)
+			return
+		}
+
+		for _, file := range filesToCopy {
+			source := files.UploadDestination + file.ParentDirectory + "/" + fileIdMap[file.Id]
+			destination := files.UploadDestination + file.ParentDirectory + "/" + file.Id
+
+			if err := os.Rename(source, destination); err != nil {
+				log.Panic(err)
+			}
+		}
+	}
 	c.JSON(http.StatusOK, topDirectories)
 }
