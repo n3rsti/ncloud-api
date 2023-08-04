@@ -2,7 +2,6 @@ package files
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log"
 	"mime/multipart"
@@ -67,7 +66,6 @@ func getFileContentType(file *multipart.FileHeader) (contentType string, err err
 func (h *Handler) Upload(c *gin.Context) {
 	form, _ := c.MultipartForm()
 
-	fmt.Println(form.File["upload[]"])
 	files := form.File["upload[]"]
 
 	if len(files) == 0 {
@@ -76,18 +74,6 @@ func (h *Handler) Upload(c *gin.Context) {
 		})
 		return
 	}
-
-	// These 2 arrays below are separate because:
-	// 1) collection.InsertMany() argument type must be []interface{} and it doesn't work with neither []bson.D nor []models.File,
-	//		so fileObjects: []interface{} is used
-	// 2) files must be updated with ID and access key after InsertMany operation, and we can't update []interface{} with a new field and value
-	//		so filesToReturn: []models.File is used
-	//
-	// TODO: fix if you find a better solution, because we are using 2 arrays = 2x space
-	// (though it might not be a problem since no one will upload million files at once (probably :-D ))
-
-	// Array of files in format for database insert
-	fileObjects := make([]interface{}, 0, len(files))
 
 	// Array of files to return. They need to be updated after DB insert with access key and ID ...
 	// ... because they must be included in endpoint response
@@ -111,7 +97,6 @@ func (h *Handler) Upload(c *gin.Context) {
 		}
 
 		filesToReturn = append(filesToReturn, newFile)
-		fileObjects = append(fileObjects, newFile.ToBSONnotEmpty())
 
 		if err := newFile.Validate(); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -125,7 +110,7 @@ func (h *Handler) Upload(c *gin.Context) {
 
 	opts := options.InsertMany().SetOrdered(true)
 
-	res, err := collection.InsertMany(c, fileObjects, opts)
+	res, err := collection.InsertMany(c, models.FilesToBsonNotEmpty(filesToReturn), opts)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -161,10 +146,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 	// Bind request body to File model
 	var file models.File
 
-	if err := c.MustBindWith(&file, binding.JSON); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "bad format",
-		})
+	if err := c.BindJSON(&file); err != nil {
 		return
 	}
 
@@ -188,7 +170,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 		bson.D{{Key: "$set", Value: bson.M{"name": file.Name}}},
 	)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		c.Status(http.StatusBadRequest)
 		return
 	}
@@ -294,22 +276,22 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 		} `json:"directories"`
 	}
 
-	var requestData RequestData
+	var data RequestData
 
-	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
-		log.Println(err)
+	if err := c.MustBindWith(&data, binding.JSON); err != nil {
+		return
 	}
 
 	// Check if destination directory access key is valid and matches destination directory ID
-	if directoryClaims, valid := auth.ValidateAccessKey(requestData.AccessKey); !valid ||
-		directoryClaims.Id != requestData.Id {
+	if directoryClaims, valid := auth.ValidateAccessKey(data.AccessKey); !valid ||
+		directoryClaims.Id != data.Id {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid access key for directory: " + requestData.Id,
+			"error": "invalid access key for directory: " + data.Id,
 		})
 		return
 	}
 
-	for _, directory := range requestData.Directories {
+	for _, directory := range data.Directories {
 		// Check if directory access key is valid and matches directory ID
 		if accessKeyClaims, valid := auth.ValidateAccessKey(directory.AccessKey); !valid ||
 			accessKeyClaims.Id != directory.Id {
@@ -331,7 +313,7 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 			dbOperation.SetUpdate(bson.M{
 				"$set": bson.M{
-					"parent_directory":          requestData.Id,
+					"parent_directory":          data.Id,
 					"previous_parent_directory": directory.Id,
 				},
 			})
@@ -340,13 +322,13 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 			searchDbFileList = append(searchDbFileList, map[string]interface{}{
 				"_id":              file,
-				"parent_directory": requestData.Id,
+				"parent_directory": data.Id,
 			})
 
 			// move file to destination directory
 			if err := os.Rename(
 				UploadDestination+directory.Id+"/"+file,
-				UploadDestination+requestData.Id+"/"+file,
+				UploadDestination+data.Id+"/"+file,
 			); err != nil {
 				log.Panic(err)
 			}
@@ -361,12 +343,9 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	}
 
 	// update search database
-	if response, err := h.SearchDb.Index("files").UpdateDocuments(searchDbFileList); err != nil {
+	if _, err := h.SearchDb.Index("files").UpdateDocuments(searchDbFileList); err != nil {
 		log.Println(err)
-	} else {
-		log.Println(response)
 	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"updated": res.ModifiedCount,
 	})
@@ -379,48 +358,34 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 		Files []string `json:"files"`
 	}
 
-	var requestData RequestData
+	var data RequestData
 
-	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "bad request format",
-		})
+	if err := c.BindJSON(&data); err != nil {
+		return
 	}
 
 	// List for search db update operation
-	searchDbQueryList := make([]map[string]interface{}, 0, len(requestData.Files))
+	searchDbQueryList := make([]map[string]interface{}, 0, len(data.Files))
 
-	dbResult := make([]bson.M, 0, len(requestData.Files))
-
-	// Find files from request body list
-	cursor, err := h.Db.Collection("files").
-		Find(context.TODO(), bson.M{"_id": bson.M{"$in": requestData.Files}})
+	filter := bson.D{
+		{Key: "_id", Value: bson.D{{Key: "$in", Value: data.Files}}},
+		{Key: "user", Value: userClaims.Id},
+	}
+	filesToRestore, err := models.FindFilesByFilter[models.File](h.Db, filter)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// Map results to bson.M format
-	if err = cursor.All(context.TODO(), &dbResult); err != nil {
-		log.Panic(err)
-	}
+	dbUpdateOperations := make([]mongo.WriteModel, 0, len(data.Files))
 
-	dbUpdateOperations := make([]mongo.WriteModel, 0, len(requestData.Files))
-
-	for _, file := range dbResult {
-		// Check if user is the owner of the file
-		if file["user"].(string) != userClaims.Id {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "no access for file: " + file["_id"].(string),
-			})
-		}
-
+	for _, file := range filesToRestore {
 		// Check if previous parent directory isn't empty
-		if file["previous_parent_directory"].(string) != "" {
+		if file.PreviousParentDirectory != "" {
 			operation := mongo.NewUpdateOneModel()
-			operation.SetFilter(bson.M{"_id": file["_id"]})
+			operation.SetFilter(bson.M{"_id": file.Id})
 			operation.SetUpdate(bson.M{
 				"$set": bson.M{
-					"parent_directory":          file["previous_parent_directory"],
+					"parent_directory":          file.PreviousParentDirectory,
 					"previous_parent_directory": "",
 				},
 			})
@@ -428,8 +393,8 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 			dbUpdateOperations = append(dbUpdateOperations, operation)
 
 			searchDbQueryList = append(searchDbQueryList, map[string]interface{}{
-				"_id":              file["_id"].(string),
-				"parent_directory": file["previous_parent_directory"].(string),
+				"_id":              file.Id,
+				"parent_directory": file.PreviousParentDirectory,
 			})
 		}
 	}
@@ -440,10 +405,10 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 	}
 
 	// Move on disk
-	for _, file := range dbResult {
+	for _, file := range filesToRestore {
 		if err := os.Rename(
-			UploadDestination+file["parent_directory"].(string)+"/"+file["_id"].(string),
-			UploadDestination+file["previous_parent_directory"].(string)+"/"+file["_id"].(string),
+			UploadDestination+file.ParentDirectory+"/"+file.Id,
+			UploadDestination+file.PreviousParentDirectory+"/"+file.Id,
 		); err != nil {
 			log.Println(err)
 		}
@@ -484,12 +449,12 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 		DestinationAccessKey string   `json:"destination_access_key"`
 	}
 
-	var requestData RequestData
-	if err := c.MustBindWith(&requestData, binding.JSON); err != nil {
+	var data RequestData
+	if err := c.BindJSON(&data); err != nil {
 		return
 	}
 
-	sourceDirectory, isValid := auth.ValidateAccessKey(requestData.SourceAccessKey)
+	sourceDirectory, isValid := auth.ValidateAccessKey(data.SourceAccessKey)
 	if !isValid {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "invalid access key for source directory",
@@ -497,7 +462,7 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 		return
 	}
 
-	destinationDirectory, isValid := auth.ValidateAccessKey(requestData.DestinationAccessKey)
+	destinationDirectory, isValid := auth.ValidateAccessKey(data.DestinationAccessKey)
 	if !isValid {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "invalid access key for destination directory",
@@ -518,21 +483,13 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 	},
 	)
 
-	cursor, err := h.Db.Collection("files").
-		Find(context.TODO(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: requestData.Files}}}}, opts)
+	filter := bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: data.Files}}}}
+	files, err := models.FindFilesByFilter[models.File](h.Db, filter, opts)
 	if err != nil {
 		log.Panic(err)
-		return
 	}
 
-	var files []models.File
-
-	if err := cursor.All(context.TODO(), &files); err != nil {
-		log.Panic(err)
-		return
-	}
-
-	if len(files) != len(requestData.Files) {
+	if len(files) != len(data.Files) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
@@ -549,11 +506,10 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 		InsertMany(context.TODO(), models.FilesToBsonNotEmpty(files), insertOpts)
 	if err != nil {
 		log.Panic(err)
-		return
 	}
 
 	for idx, file := range files {
-		source := openFile(UploadDestination + SOURCE_DIRECTORY_ID + "/" + requestData.Files[idx])
+		source := openFile(UploadDestination + SOURCE_DIRECTORY_ID + "/" + data.Files[idx])
 		defer source.Close()
 
 		destination := createFile(

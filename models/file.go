@@ -13,9 +13,9 @@ import (
 
 type File struct {
 	Id                      string `json:"id"                                  bson:"_id"`
-	Name                    string `json:"name"                                                        validate:"max=260"`
+	Name                    string `json:"name"                                                                 validate:"max=260"`
 	ParentDirectory         string `json:"parent_directory,omitempty"          bson:"parent_directory"`
-	PreviousParentDirectory string `json:"previous_parent_directory,omitempty"`
+	PreviousParentDirectory string `json:"previous_parent_directory,omitempty" bson:"previous_parent_directory"`
 	User                    string `json:"user,omitempty"`
 	Type                    string `json:"type"`
 	Size                    int64  `json:"size"`
