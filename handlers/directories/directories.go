@@ -2,7 +2,6 @@ package directories
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -63,6 +62,7 @@ func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 		matchStage = bson.D{
 			{Key: "$match", Value: bson.D{
 				{Key: "_id", Value: directoryId},
+				{Key: "user", Value: claims.Id},
 			}},
 		}
 	}
@@ -100,13 +100,6 @@ func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 
 	if len(results) == 0 {
 		c.Status(http.StatusNotFound)
-		return
-	}
-
-	directoryOwner := results[0]["user"]
-
-	if directoryOwner == "" || directoryOwner != claims.Id {
-		c.Status(http.StatusForbidden)
 		return
 	}
 
@@ -151,9 +144,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 
 	_, err := collection.InsertOne(c, directory.ToBsonNotEmpty())
 	if err != nil {
-		fmt.Println(err)
-		c.Status(http.StatusBadRequest)
-		return
+		log.Panic(err)
 	}
 
 	// Create directory on disk
@@ -333,7 +324,6 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 	directories := make([]RequestData, 0)
 
 	if err := c.BindJSON(&directories); err != nil {
-		log.Println(err)
 		return
 	}
 
@@ -464,14 +454,13 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 	var data RequestData
 
 	if err := c.BindJSON(&data); err != nil {
-		log.Println(err)
 		return
 	}
 
 	// Validate access key and check if the access key is for that specific directory
 	directoryClaims, valid := auth.ValidateAccessKey(data.DestinationAccessKey)
 	if !valid || directoryClaims.Id != data.DestinationId {
-		c.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusForbidden, gin.H{
 			"error": "invalid access key for directory: " + data.DestinationId,
 		})
 		return
@@ -566,23 +555,23 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 	// List for search db update operation
 	searchDbQueryList := make([]map[string]interface{}, 0, len(data.Directories))
 
-	filter := bson.M{"_id": bson.M{"$in": data.Directories}}
+	filter := bson.D{
+		{Key: "_id", Value: bson.D{{Key: "$in", Value: data.Directories}}},
+		{Key: "user", Value: userClaims.Id},
+	}
 	directories, err := models.FindDirectoriesByFilter[models.Directory](h.Db, filter)
 	if err != nil {
 		log.Panic(err)
+	}
+
+	if len(directories) == 0 {
+		c.Status(http.StatusNotFound)
 		return
 	}
 
 	var dbUpdateOperations []mongo.WriteModel
 
 	for _, directory := range directories {
-		if directory.User != userClaims.Id {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "no access for directory: " + directory.Id,
-			})
-			return
-		}
-
 		if directory.PreviousParentDirectory != "" {
 			dbOperation := mongo.NewUpdateOneModel()
 			dbOperation.SetFilter(bson.M{"_id": directory.Id})
@@ -600,13 +589,11 @@ func (h *Handler) RestoreDirectories(c *gin.Context) {
 				"parent_directory": directory.PreviousParentDirectory,
 			})
 		}
-
 	}
 
 	res, err := h.Db.Collection("directories").BulkWrite(context.TODO(), dbUpdateOperations)
 	if err != nil {
 		log.Panic(err)
-		return
 	}
 
 	if _, err := h.SearchDb.Index("directories").UpdateDocuments(searchDbQueryList); err != nil {
@@ -640,7 +627,6 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 	directories, err := models.FindDirectoriesByFilter[models.Directory](h.Db, filter)
 	if err != nil {
 		log.Panic(err)
-		return
 	}
 
 	topDirectories := make([]*models.Directory, 0, len(data.Directories))
@@ -702,7 +688,6 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 
 	if _, err := h.Db.Collection("directories").InsertMany(context.TODO(), models.DirectoryPointersToBsonNotEmpty(directoriesToCopy)); err != nil {
 		log.Panic(err)
-		return
 	}
 
 	for _, dir := range directoriesToCopy {
@@ -710,14 +695,12 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 		destinationDirectory := files.UploadDestination + dir.Id
 		if err := cp.Copy(sourceDirectory, destinationDirectory); err != nil {
 			log.Panic(err)
-			return
 		}
 	}
 
 	filesToCopy, err := models.FindFilesByFilter[models.File](h.Db, filter)
 	if err != nil {
 		log.Panic(err)
-		return
 	}
 
 	if len(filesToCopy) > 0 {
@@ -734,7 +717,6 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 
 		if _, err := h.Db.Collection("files").InsertMany(context.TODO(), models.FilesToBsonNotEmpty(filesToCopy)); err != nil {
 			log.Panic(err)
-			return
 		}
 
 		for _, file := range filesToCopy {
