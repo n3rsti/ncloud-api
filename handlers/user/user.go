@@ -1,7 +1,6 @@
 package user
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -76,7 +75,8 @@ func (h *Handler) Register(c *gin.Context) {
 	// hash password
 	passwordHash, err := crypto.GenerateHash(user.Password)
 	if err != nil {
-		fmt.Println("Error while creating password hash")
+		c.Status(http.StatusInternalServerError)
+		log.Println("Error while creating password hash")
 		return
 	}
 
@@ -84,7 +84,6 @@ func (h *Handler) Register(c *gin.Context) {
 
 	_, err = collection.InsertOne(c, user.ToBSON())
 	if err != nil {
-		log.Println("Error during DB operation")
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "user already exists",
 		})
@@ -130,19 +129,19 @@ func (h *Handler) Register(c *gin.Context) {
 }
 
 func (h *Handler) Login(c *gin.Context) {
-	type LoginData struct {
+	type RequestData struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 
-	var loginData LoginData
+	var data RequestData
 
-	if err := c.BindJSON(&loginData); err != nil {
+	if err := c.BindJSON(&data); err != nil {
 		return
 	}
 
-	if loginData.Username == "" || loginData.Password == "" {
-		fmt.Println("Password or username empty")
+	if data.Username == "" || data.Password == "" {
+		log.Println("Password or username empty")
 		c.Status(http.StatusBadRequest)
 		return
 	}
@@ -150,19 +149,19 @@ func (h *Handler) Login(c *gin.Context) {
 	var result bson.M
 
 	collection := h.Db.Collection("user")
-	err := collection.FindOne(c, bson.D{{Key: "username", Value: loginData.Username}}).
+	err := collection.FindOne(c, bson.D{{Key: "username", Value: data.Username}}).
 		Decode(&result)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		c.Status(http.StatusForbidden)
 		return
 	}
 
 	passwordHash := result["password"].(string)
 
-	isValidPassword := crypto.ComparePasswordAndHash(loginData.Password, passwordHash)
+	isValidPassword := crypto.ComparePasswordAndHash(data.Password, passwordHash)
 	if !isValidPassword {
-		fmt.Println(err)
+		log.Println(err)
 		c.Status(http.StatusForbidden)
 		return
 	}
@@ -172,18 +171,12 @@ func (h *Handler) Login(c *gin.Context) {
 	accessToken, refreshToken, err := auth.GenerateTokens(userId)
 	if err != nil {
 		log.Panic(err)
-		return
-	}
-
-	if err != nil {
-		c.Status(http.StatusInternalServerError)
-		return
 	}
 
 	trashAccessKey := result["trash_access_key"].(string)
 
 	c.JSON(http.StatusOK, gin.H{
-		"username":         loginData.Username,
+		"username":         data.Username,
 		"access_token":     accessToken,
 		"refresh_token":    refreshToken,
 		"trash_access_key": trashAccessKey,
