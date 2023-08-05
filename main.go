@@ -199,6 +199,7 @@ func main() {
 		authorized.POST("/api/directories/move", directoryHandler.ChangeDirectory)
 		authorized.POST("/api/directories/restore", directoryHandler.RestoreDirectories)
 		authorized.POST("/api/files/restore", fileHandler.RestoreFiles)
+		authorized.DELETE("/api/users/:id", userHandler.DeleteUser)
 
 		directoryGroup := authorized.Group("/api/")
 		directoryGroup.Use(auth.DirectoryAuth())

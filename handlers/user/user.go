@@ -1,6 +1,7 @@
 package user
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"gopkg.in/validator.v2"
 
 	"ncloud-api/handlers/files"
@@ -202,4 +204,58 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
 	})
+}
+
+func (h *Handler) DeleteUser(c *gin.Context) {
+	userId := c.Param("id")
+	claims := auth.ExtractClaimsFromContext(c)
+
+	if userId != claims.Id {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	filter := bson.D{{Key: "_id", Value: claims.Id}}
+	res, err := h.Db.Collection("user").DeleteOne(context.TODO(), filter)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	if res.DeletedCount != 1 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	opts := options.Find().SetProjection(
+		bson.D{
+			{Key: "_id", Value: 1},
+		},
+	)
+
+	filter = bson.D{{Key: "user", Value: claims.Id}}
+	directoriesToDelete, err := models.FindDirectoriesByFilter[models.Directory](h.Db, filter, opts)
+	if err != nil {
+		log.Println(err)
+	}
+
+	for _, directory := range directoriesToDelete {
+		if err = os.RemoveAll(files.UploadDestination + directory.Id); err != nil {
+			log.Println(err)
+		}
+	}
+
+	_, err = h.Db.Collection("directories").DeleteMany(context.TODO(), filter)
+	if err != nil {
+		log.Println(err)
+	}
+	_, err = h.Db.Collection("files").DeleteMany(context.TODO(), filter)
+	if err != nil {
+		log.Println(err)
+	}
+
+	h.SearchDb.Index("directories").DeleteDocumentsByFilter("user = " + claims.Id)
+	h.SearchDb.Index("files").DeleteDocumentsByFilter("user = " + claims.Id)
+
+	c.Status(http.StatusNoContent)
 }
