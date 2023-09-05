@@ -414,7 +414,7 @@ func validateDirectory(
 	directoryTree map[string][]string,
 ) bool {
 	// Validate access key and check if this access key is for that specific directory
-	accessKeyClaims, IS_INVALID_ACCESS_KEY := auth.ValidateAccessKey(accessKey)
+	accessKeyClaims, IS_VALID_ACCESS_KEY := auth.ValidateAccessKey(accessKey)
 	IS_FOR_THIS_DIRECTORY := accessKeyClaims.Id == directoryId
 
 	// Check if access key allows user to modify (check permissions)
@@ -427,7 +427,7 @@ func validateDirectory(
 	) ||
 		directoryId == directoryToMove
 
-	if IS_INVALID_ACCESS_KEY || !VALID_PERMISSIONS || IS_INSIDE_OF_ITSELF ||
+	if !IS_VALID_ACCESS_KEY || !VALID_PERMISSIONS || IS_INSIDE_OF_ITSELF ||
 		!IS_FOR_THIS_DIRECTORY {
 		c.Status(http.StatusBadRequest)
 		return false
