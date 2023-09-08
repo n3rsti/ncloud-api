@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"mime/multipart"
 	"net/http"
 	"os"
 
@@ -48,21 +47,6 @@ func (h *Handler) DeleteFromSearchDatabase(id []string) {
 	}
 }
 
-func getFileContentType(file *multipart.FileHeader) (contentType string, err error) {
-	f, err := file.Open()
-	if err != nil {
-		return "", err
-	}
-
-	defer f.Close()
-
-	buf := make([]byte, 512)
-
-	_, err = f.Read(buf)
-
-	return http.DetectContentType(buf), err
-}
-
 func (h *Handler) Upload(c *gin.Context) {
 	form, _ := c.MultipartForm()
 
@@ -84,7 +68,7 @@ func (h *Handler) Upload(c *gin.Context) {
 
 	// Create array of files based on form data
 	for _, file := range files {
-		fileContentType, _ := getFileContentType(file)
+		fileContentType := file.Header.Get("Content-Type")
 		fileId, _ := uuid.NewUUID()
 
 		newFile := models.File{
@@ -108,9 +92,7 @@ func (h *Handler) Upload(c *gin.Context) {
 
 	collection := h.Db.Collection("files")
 
-	opts := options.InsertMany().SetOrdered(true)
-
-	res, err := collection.InsertMany(c, models.FilesToBsonNotEmpty(filesToReturn), opts)
+	_, err := collection.InsertMany(context.TODO(), models.FilesToBsonNotEmpty(filesToReturn))
 	if err != nil {
 		log.Panic(err)
 	}
@@ -120,11 +102,9 @@ func (h *Handler) Upload(c *gin.Context) {
 	for index, file := range files {
 		if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+filesToReturn[index].Id); err != nil {
 			// Remove file document if saving it wasn't successful
-			_, _ = collection.DeleteOne(c, bson.D{{Key: "_id", Value: res.InsertedIDs[index]}})
+			_, _ = collection.DeleteOne(context.TODO(), bson.D{{Key: "_id", Value: filesToReturn[index].Id}})
 			log.Panic(err)
 		}
-
-		fileContentType, _ := getFileContentType(file)
 
 		// Update search database
 		h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
@@ -132,7 +112,7 @@ func (h *Handler) Upload(c *gin.Context) {
 			Name:      file.Filename,
 			Directory: directory,
 			User:      claims.Id,
-			Type:      fileContentType,
+			Type:      filesToReturn[index].Type,
 		})
 	}
 
