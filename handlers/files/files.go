@@ -47,6 +47,12 @@ func (h *Handler) DeleteFromSearchDatabase(id []string) {
 	}
 }
 
+func (h *Handler) InsertDocumentsToSearchDatabase(documents interface{}) {
+	if err := search.InsertDocuments(h.SearchDb, "files", documents); err != nil {
+		log.Println(err)
+	}
+}
+
 func (h *Handler) Upload(c *gin.Context) {
 	form, _ := c.MultipartForm()
 
@@ -59,8 +65,6 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
-	// Array of files to return. They need to be updated after DB insert with access key and ID ...
-	// ... because they must be included in endpoint response
 	filesToReturn := make([]models.File, 0, len(files))
 
 	directory := c.Param("id")
@@ -92,29 +96,21 @@ func (h *Handler) Upload(c *gin.Context) {
 
 	collection := h.Db.Collection("files")
 
-	_, err := collection.InsertMany(context.TODO(), models.FilesToBsonNotEmpty(filesToReturn))
+	_, err := collection.InsertMany(c, models.FilesToBsonNotEmpty(filesToReturn))
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// Create and update access keys for each file
-	// Update filesToReturn with created ID and access key
 	for index, file := range files {
 		if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+filesToReturn[index].Id); err != nil {
 			// Remove file document if saving it wasn't successful
-			_, _ = collection.DeleteOne(context.TODO(), bson.D{{Key: "_id", Value: filesToReturn[index].Id}})
+			_, _ = collection.DeleteOne(c, bson.D{{Key: "_id", Value: filesToReturn[index].Id}})
 			log.Panic(err)
 		}
 
-		// Update search database
-		h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
-			Id:        filesToReturn[index].Id,
-			Name:      file.Filename,
-			Directory: directory,
-			User:      claims.Id,
-			Type:      filesToReturn[index].Type,
-		})
 	}
+
+	h.InsertDocumentsToSearchDatabase(models.FilesToMap(filesToReturn))
 
 	c.JSON(http.StatusCreated, filesToReturn)
 }

@@ -104,3 +104,19 @@ func FilesToBsonNotEmpty(files []File) []interface{} {
 
 	return result
 }
+
+func FilesToMap(files []File) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(files))
+	for _, file := range files {
+		result = append(result, map[string]interface{}{
+			"_id":              file.Id,
+			"name":             file.Name,
+			"parent_directory": file.ParentDirectory,
+			"type":             file.Type,
+			"user":             file.User,
+		})
+	}
+
+	return result
+
+}

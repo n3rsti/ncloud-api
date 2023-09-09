@@ -62,3 +62,11 @@ func DeleteDocuments(db *meilisearch.Client, index string, id []string) error {
 	}
 	return nil
 }
+
+func InsertDocuments(db *meilisearch.Client, index string, documents interface{}) error {
+	if _, err := db.Index(index).AddDocuments(documents); err != nil {
+		return err
+	}
+
+	return nil
+}
