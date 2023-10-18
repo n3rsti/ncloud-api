@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +48,9 @@ func (h *Handler) DeleteFromSearchDatabase(id []string) {
 
 func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 	directoryId := c.Param("id")
+	limit := c.Query("limit")
+	skip := c.Query("skip")
+
 	claims := auth.ExtractClaimsFromContext(c)
 
 	var matchStage bson.D
@@ -67,12 +71,25 @@ func (h *Handler) GetDirectoryWithFiles(c *gin.Context) {
 		}
 	}
 
+	fileJoinPipeline := make([]bson.D, 0, 2)
+
+	intSkip, err := strconv.Atoi(skip)
+	if err != nil {
+		intSkip = 0
+	}
+	fileJoinPipeline = append(fileJoinPipeline, bson.D{{Key: "$skip", Value: intSkip}})
+
+	if intLimit, err := strconv.Atoi(limit); err == nil {
+		fileJoinPipeline = append(fileJoinPipeline, bson.D{{Key: "$limit", Value: intLimit}})
+	}
+
 	// Join files
 	lookupStage := bson.D{{Key: "$lookup", Value: bson.D{
 		{Key: "from", Value: "files"},
 		{Key: "localField", Value: "_id"},
 		{Key: "foreignField", Value: "parent_directory"},
 		{Key: "as", Value: "files"},
+		{Key: "pipeline", Value: fileJoinPipeline},
 	}}}
 
 	// Join directories
