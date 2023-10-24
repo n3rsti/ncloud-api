@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -82,6 +83,7 @@ func (h *Handler) Upload(c *gin.Context) {
 			User:            claims.Id,
 			Type:            fileContentType,
 			Size:            file.Size,
+			Created:         time.Now().UnixMilli(),
 		}
 
 		filesToReturn = append(filesToReturn, newFile)
