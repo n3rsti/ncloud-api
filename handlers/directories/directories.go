@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -149,6 +150,8 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	directoryId, _ := uuid.NewUUID()
 	directory.Id = directoryId.String()
 
+	directory.Created = time.Now().UnixMilli()
+
 	// Create and set access key to directory
 	newDirectoryAccessKey, _ := auth.GenerateDirectoryAccessKey(
 		directoryId.String(),
@@ -208,21 +211,12 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 		return
 	}
 
-	if directory.User != "" || directory.Id != "" || directory.AccessKey != "" ||
-		directory.PreviousParentDirectory != "" ||
-		directory.ParentDirectory != "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "attempt to modify restricted fields",
-		})
-		return
-	}
-
 	collection := h.Db.Collection("directories")
 
 	_, err := collection.UpdateByID(
 		c,
 		directoryId,
-		bson.D{{Key: "$set", Value: directory.ToBsonNotEmpty()}},
+		bson.D{{Key: "$set", Value: bson.M{"name": directory.Name}}},
 	)
 	if err != nil {
 		log.Println(err)

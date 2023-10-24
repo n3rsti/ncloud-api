@@ -18,6 +18,7 @@ type Directory struct {
 	PreviousParentDirectory string `json:"previous_parent_directory,omitempty"`
 	User                    string `json:"user"`
 	AccessKey               string `json:"access_key"`
+	Created                 int64  `json:"created"`
 }
 
 func (d *Directory) ToBSON() bson.D {
@@ -51,6 +52,9 @@ func (d *Directory) ToBsonNotEmpty() bson.D {
 	}
 	if d.AccessKey != "" {
 		data = append(data, bson.E{Key: "access_key", Value: d.AccessKey})
+	}
+	if d.Created != 0 {
+		data = append(data, bson.E{Key: "created", Value: d.Created})
 	}
 
 	return data
