@@ -151,6 +151,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	directory.Id = directoryId.String()
 
 	directory.Created = time.Now().UnixMilli()
+	directory.Modified = directory.Created
 
 	// Create and set access key to directory
 	newDirectoryAccessKey, _ := auth.GenerateDirectoryAccessKey(
@@ -216,7 +217,7 @@ func (h *Handler) ModifyDirectory(c *gin.Context) {
 	_, err := collection.UpdateByID(
 		c,
 		directoryId,
-		bson.D{{Key: "$set", Value: bson.M{"name": directory.Name}}},
+		bson.D{{Key: "$set", Value: bson.M{"name": directory.Name, "modified": time.Now().UnixMilli()}}},
 	)
 	if err != nil {
 		log.Println(err)
