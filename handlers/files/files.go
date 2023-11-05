@@ -76,6 +76,9 @@ func (h *Handler) Upload(c *gin.Context) {
 		fileContentType := file.Header.Get("Content-Type")
 		fileId, _ := uuid.NewUUID()
 
+		createdTs := time.Now().UnixMilli()
+		modifiedTs := createdTs
+
 		newFile := models.File{
 			Id:              fileId.String(),
 			Name:            file.Filename,
@@ -83,7 +86,8 @@ func (h *Handler) Upload(c *gin.Context) {
 			User:            claims.Id,
 			Type:            fileContentType,
 			Size:            file.Size,
-			Created:         time.Now().UnixMilli(),
+			Created:         createdTs,
+			Modified:        modifiedTs,
 		}
 
 		filesToReturn = append(filesToReturn, newFile)
@@ -145,7 +149,7 @@ func (h *Handler) UpdateFile(c *gin.Context) {
 			{Key: "_id", Value: fileId},
 			{Key: "parent_directory", Value: parentDirectoryId},
 		},
-		bson.D{{Key: "$set", Value: bson.M{"name": file.Name}}},
+		bson.D{{Key: "$set", Value: bson.M{"name": file.Name, "modified": time.Now().UnixMilli()}}},
 	)
 	if err != nil {
 		log.Println(err)

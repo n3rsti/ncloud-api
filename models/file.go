@@ -20,6 +20,7 @@ type File struct {
 	Type                    string `json:"type"`
 	Size                    int64  `json:"size"`
 	Created                 int64  `json:"created"`
+	Modified                int64  `json:"modified"`
 }
 
 func (f *File) ToBSON() bson.D {
@@ -64,6 +65,9 @@ func (f *File) ToBSONnotEmpty() bson.D {
 	}
 	if f.Created != 0 {
 		data = append(data, bson.E{Key: "created", Value: f.Created})
+	}
+	if f.Modified != 0 {
+		data = append(data, bson.E{Key: "modified", Value: f.Modified})
 	}
 
 	return data
