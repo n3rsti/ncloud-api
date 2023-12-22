@@ -1,7 +1,9 @@
 package helper
 
 import (
+	"archive/zip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -163,4 +166,46 @@ func MapCursorToObject[T interface{}](cursor *mongo.Cursor) ([]T, error) {
 	}
 
 	return result, nil
+}
+
+func CreateZip(zipWriter *zip.Writer, directory string, fileList []string) error {
+	for _, fileName := range fileList {
+		if _, err := uuid.Parse(fileName); err != nil {
+			return errors.New("invalid filename")
+		}
+		filePath := "/var/ncloud_upload/" + directory + "/" + fileName
+
+		err := CopyFileToZipWriter(zipWriter, filePath)
+		if err != nil {
+			return fmt.Errorf("error copying content for %s: %w", filePath, err)
+		}
+	}
+
+	return nil
+}
+
+func CopyFileToZipWriter(zipWriter *zip.Writer, filePath string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("error opening file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("error getting file info for %s: %w", filePath, err)
+	}
+
+	header := &zip.FileHeader{
+		Name:   fileInfo.Name(),
+		Method: zip.Deflate,
+	}
+
+	writer, err := zipWriter.CreateHeader(header)
+	if err != nil {
+		return fmt.Errorf("error creating header for %s: %w", filePath, err)
+	}
+	_, err = io.Copy(writer, file)
+
+	return nil
 }

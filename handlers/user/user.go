@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"gopkg.in/validator.v2"
 
-	"ncloud-api/handlers/files"
+	"ncloud-api/config"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"ncloud-api/utils/crypto"
@@ -100,10 +100,10 @@ func (h *Handler) Register(c *gin.Context) {
 	)
 
 	// TODO: do something on error
-	if err := os.Mkdir(files.UploadDestination+mainId.String(), 0700); err != nil {
+	if err := os.Mkdir(config.UploadDestination+mainId.String(), 0700); err != nil {
 		log.Println(err)
 	}
-	if err := os.Mkdir(files.UploadDestination+trashId.String(), 0700); err != nil {
+	if err := os.Mkdir(config.UploadDestination+trashId.String(), 0700); err != nil {
 		log.Println(err)
 	}
 
@@ -240,7 +240,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	}
 
 	for _, directory := range directoriesToDelete {
-		if err = os.RemoveAll(files.UploadDestination + directory.Id); err != nil {
+		if err = os.RemoveAll(config.UploadDestination + directory.Id); err != nil {
 			log.Println(err)
 		}
 	}

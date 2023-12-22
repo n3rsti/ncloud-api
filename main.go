@@ -177,6 +177,7 @@ func main() {
 
 	router.Use(cors.Middleware())
 
+	router.POST("/api/files/download", fileHandler.GetFiles)
 	router.GET("/api/health", health)
 	router.POST("/api/register", userHandler.Register)
 	router.POST("/api/login", userHandler.Login)

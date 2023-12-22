@@ -16,7 +16,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 
-	"ncloud-api/handlers/files"
+	"ncloud-api/config"
 	"ncloud-api/handlers/search"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
@@ -169,7 +169,7 @@ func (h *Handler) CreateDirectory(c *gin.Context) {
 	}
 
 	// Create directory on disk
-	if err := os.Mkdir(files.UploadDestination+directoryId.String(), 0700); err != nil {
+	if err := os.Mkdir(config.UploadDestination+directoryId.String(), 0700); err != nil {
 		log.Panic(err)
 	}
 
@@ -397,7 +397,7 @@ func (h *Handler) DeleteDirectories(c *gin.Context) {
 
 	// Remove all directories (with files) from disk
 	for _, directory := range directoryList {
-		if err = os.RemoveAll(files.UploadDestination + directory); err != nil {
+		if err = os.RemoveAll(config.UploadDestination + directory); err != nil {
 			log.Panic(err)
 		}
 	}
@@ -703,8 +703,8 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 	}
 
 	for _, dir := range directoriesToCopy {
-		sourceDirectory := files.UploadDestination + directoryIdMap[dir.Id]
-		destinationDirectory := files.UploadDestination + dir.Id
+		sourceDirectory := config.UploadDestination + directoryIdMap[dir.Id]
+		destinationDirectory := config.UploadDestination + dir.Id
 		if err := cp.Copy(sourceDirectory, destinationDirectory); err != nil {
 			log.Panic(err)
 		}
@@ -732,8 +732,8 @@ func (h *Handler) CopyDirectories(c *gin.Context) {
 		}
 
 		for _, file := range filesToCopy {
-			source := files.UploadDestination + file.ParentDirectory + "/" + fileIdMap[file.Id]
-			destination := files.UploadDestination + file.ParentDirectory + "/" + file.Id
+			source := config.UploadDestination + file.ParentDirectory + "/" + fileIdMap[file.Id]
+			destination := config.UploadDestination + file.ParentDirectory + "/" + file.Id
 
 			if err := os.Rename(source, destination); err != nil {
 				log.Panic(err)

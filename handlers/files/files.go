@@ -1,6 +1,7 @@
 package files
 
 import (
+	"archive/zip"
 	"context"
 	"io"
 	"log"
@@ -16,12 +17,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
+	"ncloud-api/config"
 	"ncloud-api/handlers/search"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
+	"ncloud-api/utils/helper"
 )
-
-const UploadDestination = "/var/ncloud_upload/"
 
 type Handler struct {
 	Db       *mongo.Database
@@ -108,7 +109,7 @@ func (h *Handler) Upload(c *gin.Context) {
 	}
 
 	for index, file := range files {
-		if err = c.SaveUploadedFile(file, UploadDestination+directory+"/"+filesToReturn[index].Id); err != nil {
+		if err = c.SaveUploadedFile(file, config.UploadDestination+directory+"/"+filesToReturn[index].Id); err != nil {
 			// Remove file document if saving it wasn't successful
 			_, _ = collection.DeleteOne(c, bson.D{{Key: "_id", Value: filesToReturn[index].Id}})
 			log.Panic(err)
@@ -177,7 +178,40 @@ func (h *Handler) GetFile(c *gin.Context) {
 		return
 	}
 
-	c.File(UploadDestination + directory.Id + "/" + fileId)
+	c.File(config.UploadDestination + directory.Id + "/" + fileId)
+}
+
+func (h *Handler) GetFiles(c *gin.Context) {
+	type RequestData struct {
+		Id        string   `json:"id"`
+		AccessKey string   `json:"access_key"`
+		Files     []string `json:"files"`
+	}
+
+	var data []RequestData
+
+	if err := c.MustBindWith(&data, binding.JSON); err != nil {
+		log.Println(err)
+	}
+
+	zipFile, err := os.CreateTemp("", "files.zip")
+	if err != nil {
+		log.Panic(err)
+	}
+	defer os.Remove(zipFile.Name())
+
+	zipWriter := zip.NewWriter(zipFile)
+
+	for _, directory := range data {
+		err := helper.CreateZip(zipWriter, directory.Id, directory.Files)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+
+	zipWriter.Close()
+
+	c.File(zipFile.Name())
 }
 
 func (h *Handler) DeleteFiles(c *gin.Context) {
@@ -221,7 +255,7 @@ func (h *Handler) DeleteFiles(c *gin.Context) {
 
 	for _, directory := range data {
 		for _, file := range directory.Files {
-			if err := os.Remove(UploadDestination + directory.DirectoryId + "/" + file); err != nil {
+			if err := os.Remove(config.UploadDestination + directory.DirectoryId + "/" + file); err != nil {
 				log.Println(err)
 			}
 
@@ -309,8 +343,8 @@ func (h *Handler) ChangeDirectory(c *gin.Context) {
 
 			// move file to destination directory
 			if err := os.Rename(
-				UploadDestination+directory.Id+"/"+file,
-				UploadDestination+data.Id+"/"+file,
+				config.UploadDestination+directory.Id+"/"+file,
+				config.UploadDestination+data.Id+"/"+file,
 			); err != nil {
 				log.Panic(err)
 			}
@@ -389,8 +423,8 @@ func (h *Handler) RestoreFiles(c *gin.Context) {
 	// Move on disk
 	for _, file := range filesToRestore {
 		if err := os.Rename(
-			UploadDestination+file.ParentDirectory+"/"+file.Id,
-			UploadDestination+file.PreviousParentDirectory+"/"+file.Id,
+			config.UploadDestination+file.ParentDirectory+"/"+file.Id,
+			config.UploadDestination+file.PreviousParentDirectory+"/"+file.Id,
 		); err != nil {
 			log.Println(err)
 		}
@@ -491,11 +525,11 @@ func (h *Handler) CopyFiles(c *gin.Context) {
 	}
 
 	for idx, file := range files {
-		source := openFile(UploadDestination + SOURCE_DIRECTORY_ID + "/" + data.Files[idx])
+		source := openFile(config.UploadDestination + SOURCE_DIRECTORY_ID + "/" + data.Files[idx])
 		defer source.Close()
 
 		destination := createFile(
-			UploadDestination + DESTINATION_DIRECTORY_ID + "/" + file.Id,
+			config.UploadDestination + DESTINATION_DIRECTORY_ID + "/" + file.Id,
 		)
 		defer destination.Close()
 
