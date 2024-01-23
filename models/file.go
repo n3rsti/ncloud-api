@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"regexp"
 
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
@@ -13,7 +14,7 @@ import (
 
 type File struct {
 	Id                      string `json:"id"                                  bson:"_id"`
-	Name                    string `json:"name"                                                                 validate:"max=260"`
+	Name                    string `json:"name" validate:"regexp=^[a-zA-Z0-9_ -][a-zA-Z0-9_. -]{0,253}[a-zA-Z0-9_ -]$"`
 	ParentDirectory         string `json:"parent_directory,omitempty"          bson:"parent_directory"`
 	PreviousParentDirectory string `json:"previous_parent_directory,omitempty" bson:"previous_parent_directory"`
 	User                    string `json:"user,omitempty"`
@@ -127,4 +128,12 @@ func FilesToMap(files []File) []map[string]interface{} {
 
 	return result
 
+}
+
+func IsValidFileName(fileName string) bool {
+	pattern := `^[a-zA-Z0-9_ -][a-zA-Z0-9_. -]{0,253}[a-zA-Z0-9_ -]$`
+
+	regex := regexp.MustCompile(pattern)
+
+	return regex.MatchString(fileName)
 }

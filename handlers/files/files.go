@@ -18,10 +18,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"ncloud-api/config"
+	"ncloud-api/fileutil"
 	"ncloud-api/handlers/search"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
-	"ncloud-api/utils/helper"
 )
 
 type Handler struct {
@@ -183,9 +183,9 @@ func (h *Handler) GetFile(c *gin.Context) {
 
 func (h *Handler) GetFiles(c *gin.Context) {
 	type RequestData struct {
-		Id        string   `json:"id"`
-		AccessKey string   `json:"access_key"`
-		Files     []string `json:"files"`
+		Id        string     `json:"id"`
+		AccessKey string     `json:"access_key"`
+		Files     [][]string `json:"files"`
 	}
 
 	var data []RequestData
@@ -203,7 +203,7 @@ func (h *Handler) GetFiles(c *gin.Context) {
 	zipWriter := zip.NewWriter(zipFile)
 
 	for _, directory := range data {
-		err := helper.CreateZip(zipWriter, directory.Id, directory.Files)
+		err := fileutil.CreateZip(zipWriter, directory.Id, directory.Files)
 		if err != nil {
 			log.Println(err)
 		}
