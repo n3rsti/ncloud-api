@@ -34,14 +34,14 @@ type HTTPReqInfo struct {
 	userAgent string
 }
 
-// NewLogger returns a new Logger struct with [w] output
+// NewLogger returns a new Logger struct with w output
 func NewLogger(w io.Writer) Logger {
 	return Logger{
 		output: w,
 	}
 }
 
-// StatusCodeColor formats color [code] to string
+// StatusCodeColor formats color code to string
 func StatusCodeColor(code int) string {
 	switch {
 	case code >= http.StatusContinue && code < http.StatusOK:
@@ -57,7 +57,7 @@ func StatusCodeColor(code int) string {
 	}
 }
 
-// Log is the main function of logger. Logs the data in format: [status] [uri] [method]. Status is displayed in matching color.
+// Log is the main function of logger. Logs the data in format: status uri method. Status is displayed in matching color.
 func (l Logger) Log(h http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		m := httpsnoop.CaptureMetrics(h, w, r)
