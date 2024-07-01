@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/n3rsti/ncloud-api/server"
+	"ncloud-api/server"
 )
 
 // run is the main function to run the program. creates context and runs the server

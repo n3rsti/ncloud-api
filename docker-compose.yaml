@@ -1,0 +1,51 @@
+services:
+  app:
+    container_name: ncloud-api
+    hostname: ncloud-api
+    restart: on-failure
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 80:80
+      - 443:443
+    env_file:
+      - .env
+    volumes:
+      - /var/ncloud_upload:/var/ncloud_upload
+  mongodb:
+    image: mongo
+    container_name: mongodb-ncloud-api
+    ports:
+      - "27017:27017"
+    volumes:
+      - data:/data
+    env_file:
+      - .env
+  mongo-express:
+    image: mongo-express
+    container_name: mongo-express-ncloud-api
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+    env_file:
+      - .env
+  meilisearch:
+      image: "getmeili/meilisearch"
+      restart: unless-stopped
+      ports:
+        - "7700:7700"
+      volumes:
+        - /var/local/meilisearch:/data.ms
+      env_file:
+        - .env
+      container_name: meili-ncloud-api
+
+volumes:
+  data: { }
+
+networks:
+  default:
+    name: mongodb_network

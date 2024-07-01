@@ -11,13 +11,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/n3rsti/ncloud-api/logger"
+	"ncloud-api/logger"
+	"ncloud-api/pkg/config"
+	"ncloud-api/pkg/repositories"
+	"ncloud-api/pkg/services"
 )
 
 // NewServer creates a new server, add routes and dependencies, returns http.Handler mux
-func NewServer(logger *logger.Logger) http.Handler {
+func NewServer(
+	logger *logger.Logger,
+	userService *services.UserService,
+) http.Handler {
 	mux := http.NewServeMux()
-	addRoutes(mux)
+
+	addRoutes(mux, userService)
 	var handler http.Handler = mux
 	handler = logger.Log(mux)
 
@@ -26,8 +33,18 @@ func NewServer(logger *logger.Logger) http.Handler {
 
 // Run runs the server and creates shutdown context
 func Run(ctx context.Context, w io.Writer, args []string) error {
+	cfg := config.LoadConfig()
+
+	// repositories
+	userRepository := repositories.NewUserRepository(cfg.Db.Database(config.DbName))
+
+	// services
+	userService := services.NewUserService(userRepository)
+
+	// middleware
 	logger := logger.NewLogger(w)
-	srv := NewServer(&logger)
+
+	srv := NewServer(&logger, userService)
 
 	httpServer := &http.Server{
 		Addr:    net.JoinHostPort("0.0.0.0", "8080"),

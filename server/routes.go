@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/n3rsti/ncloud-api/utils"
+	"ncloud-api/pkg/handlers/user"
+	"ncloud-api/pkg/services"
+	"ncloud-api/pkg/utils"
 )
 
 // routes stores all the routes in format path   ->   handler.
@@ -33,8 +35,9 @@ func addRoute(mux *http.ServeMux, path string, handler http.Handler) {
 }
 
 // addRoutes adds all the routes with handlers.
-func addRoutes(mux *http.ServeMux) {
+func addRoutes(mux *http.ServeMux, userService *services.UserService) {
 	addRoute(mux, "GET /health", handleHealth())
+	addRoute(mux, "POST /api/user", user.Register(userService))
 }
 
 // PrintRoutes prints routes from routes slice.
