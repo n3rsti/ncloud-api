@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -19,6 +18,7 @@ import (
 
 	"ncloud-api/config"
 	"ncloud-api/handlers/search"
+	"ncloud-api/internal/fsutil"
 	"ncloud-api/middleware/auth"
 	"ncloud-api/models"
 	"ncloud-api/utils/helper"
@@ -67,118 +67,36 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
-	filesToReturn := make([]models.File, 0, len(files))
-
 	directory := c.Param("id")
-	claims := auth.ExtractClaimsFromContext(c)
+	user := auth.ExtractClaimsFromContext(c).Id
 
-	// Create array of files based on form data
-	for _, file := range files {
-		fileContentType := file.Header.Get("Content-Type")
-		fileId, _ := uuid.NewUUID()
+	path := user + "/" + directory
 
-		createdTs := time.Now().UnixMilli()
-		modifiedTs := createdTs
-
-		newFile := models.File{
-			Id:              fileId.String(),
-			Name:            file.Filename,
-			ParentDirectory: directory,
-			User:            claims.Id,
-			Type:            fileContentType,
-			Size:            file.Size,
-			Created:         createdTs,
-			Modified:        modifiedTs,
-		}
-
-		filesToReturn = append(filesToReturn, newFile)
-
-		if err := newFile.Validate(); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": err,
-			})
-			return
-		}
+	for _, f := range files {
+		fsutil.SaveFile(f, path)
 	}
 
-	collection := h.Db.Collection("files")
-
-	_, err := collection.InsertMany(c, models.FilesToBsonNotEmpty(filesToReturn))
-	if err != nil {
-		log.Panic(err)
-	}
-
-	for index, file := range files {
-		if err = c.SaveUploadedFile(file, config.UploadDestination+directory+"/"+filesToReturn[index].Id); err != nil {
-			// Remove file document if saving it wasn't successful
-			_, _ = collection.DeleteOne(c, bson.D{{Key: "_id", Value: filesToReturn[index].Id}})
-			log.Panic(err)
-		}
-
-	}
-
-	h.InsertDocumentsToSearchDatabase(models.FilesToMap(filesToReturn))
-
-	c.JSON(http.StatusCreated, filesToReturn)
+	// TODO: return files (check if it's needed on frontend)
 }
 
 func (h *Handler) UpdateFile(c *gin.Context) {
-	parentDirectoryAccessKey, _ := auth.ValidateAccessKey(c.GetHeader("DirectoryAccessKey"))
-	parentDirectoryId := parentDirectoryAccessKey.Id
+	oldpath := ""
+	newpath := ""
 
-	// Bind request body to File model
-	var file models.File
-
-	if err := c.BindJSON(&file); err != nil {
-		return
-	}
-
-	if err := file.Validate(); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err,
-		})
-		return
-	}
-
-	// Update file record
-	fileCollection := h.Db.Collection("files")
-	fileId := c.Param("id")
-
-	_, err := fileCollection.UpdateOne(
-		context.TODO(),
-		bson.D{
-			{Key: "_id", Value: fileId},
-			{Key: "parent_directory", Value: parentDirectoryId},
-		},
-		bson.D{{Key: "$set", Value: bson.M{"name": file.Name, "modified": time.Now().UnixMilli()}}},
-	)
+	err := fsutil.Move(oldpath, newpath)
 	if err != nil {
 		log.Println(err)
 		c.Status(http.StatusBadRequest)
 		return
 	}
 
-	h.UpdateOrAddToSearchDatabase(&SearchDatabaseData{
-		Id:   fileId,
-		Name: file.Name,
-	})
-
 	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) GetFile(c *gin.Context) {
-	// Don't need to validate access key, because it is verified in FileAuth
-	fileId := c.Param("id")
+	path := c.Param("path")
 
-	directoryAccessKey := c.GetHeader("DirectoryAccessKey")
-	directory, _ := auth.ValidateAccessKey(directoryAccessKey)
-
-	if _, err := uuid.Parse(fileId); err != nil {
-		c.Status(http.StatusBadRequest)
-		return
-	}
-
-	c.File(config.UploadDestination + directory.Id + "/" + fileId)
+	c.File(config.UploadDestination + path)
 }
 
 func (h *Handler) GetFiles(c *gin.Context) {

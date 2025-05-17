@@ -56,3 +56,9 @@ func ListDirectory(path string) ([]os.DirEntry, error) {
 
 	return entry, err
 }
+
+func ReadFile(path string) ([]byte, error) {
+	content, err := os.ReadFile(path)
+
+	return content, err
+}
