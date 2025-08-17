@@ -38,8 +38,7 @@ func gracefulShutdown(apiServer *http.Server, done chan bool) {
 }
 
 func main() {
-	port := *flag.Int("port", 8080, "port for server to listen on")
-	server := server.NewServer(port)
+	server := server.NewServer()
 
 	done := make(chan bool, 1)
 
